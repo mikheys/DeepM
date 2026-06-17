@@ -1,0 +1,87 @@
+use anyhow::Result;
+use tauri::{
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager,
+};
+use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+
+pub fn setup_tray(app: &AppHandle) -> Result<()> {
+    let menu = build_menu(app, true)?;
+
+    TrayIconBuilder::new()
+        .icon(app.default_window_icon().cloned().unwrap())
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("DeepM — local translation")
+        .on_menu_event({
+            let app = app.clone();
+            move |_tray, event: MenuEvent| {
+                handle_menu_event(&app, &event.id.0);
+            }
+        })
+        .on_tray_icon_event({
+            let app = app.clone();
+            move |_tray, event| {
+                // Double-click left button: show main window
+                if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
+                    show_main_window(&app);
+                }
+            }
+        })
+        .build(app)
+        .map_err(|e| anyhow::anyhow!("tray build error: {e}"))?;
+
+    Ok(())
+}
+
+fn build_menu(app: &AppHandle, floating_enabled: bool) -> Result<Menu<tauri::Wry>> {
+    let show_item = MenuItem::with_id(app, "show", "Open DeepM", true, None::<&str>)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let float_label = if floating_enabled { "Floating button: ON" } else { "Floating button: OFF" };
+    let toggle_floating = MenuItem::with_id(app, "toggle_floating", float_label, true, None::<&str>)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let sep = PredefinedMenuItem::separator(app)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    Menu::with_items(app, &[&show_item, &sep, &toggle_floating, &sep, &quit_item])
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+fn handle_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        "show" => show_main_window(app),
+        "toggle_floating" => {
+            let _ = app.emit("tray_toggle_floating", ());
+        }
+        "quit" => app.exit(0),
+        _ => {}
+    }
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// Rebuilds the tray menu to reflect the current floating-button state.
+pub fn rebuild_tray_menu(app: &AppHandle, floating_enabled: bool) {
+    if let Ok(menu) = build_menu(app, floating_enabled) {
+        if let Some(tray) = app.tray_by_id("") {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+}
+
+/// Updates the tray tooltip with the current model status.
+pub fn update_tray_model_status(app: &AppHandle, status: &str) {
+    if let Some(tray) = app.tray_by_id("") {
+        let _ = tray.set_tooltip(Some(&format!("DeepM — {status}")));
+    }
+}
+
+// Kept for call-site compatibility; functionality is now in rebuild_tray_menu.
+pub fn update_tray_floating_label(_app: &AppHandle, _enabled: bool) {}

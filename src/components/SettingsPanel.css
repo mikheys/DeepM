@@ -1,0 +1,227 @@
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.settings-note {
+  color: var(--color-warning);
+  font-style: italic;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.settings-row label {
+  width: 200px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.settings-row select,
+.settings-row input[type="text"],
+.settings-row input[type="number"] {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.settings-row select:focus,
+.settings-row input:focus {
+  border-color: var(--color-border-focus);
+}
+
+.settings-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.hotkey-input {
+  font-family: var(--font-mono);
+  width: 160px;
+}
+
+/* Glossary */
+.glossary-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.glossary-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  outline: none;
+  width: 150px;
+}
+
+.glossary-input:focus {
+  border-color: var(--color-border-focus);
+}
+
+.glossary-arrow {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.glossary-pair-select {
+  font-size: 12px;
+  padding: 5px 6px;
+}
+
+.btn-add {
+  padding: 6px 14px;
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--transition);
+}
+
+.btn-add:hover {
+  background: var(--color-accent-hover);
+}
+
+.glossary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.glossary-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.glossary-pair-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.glossary-source {
+  color: var(--color-text-primary);
+}
+
+.glossary-arrow-small {
+  color: var(--color-text-muted);
+}
+
+.glossary-target {
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+.glossary-remove {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  padding: 2px 5px;
+  border-radius: 3px;
+  transition: background var(--transition), color var(--transition);
+}
+
+.glossary-remove:hover {
+  background: rgba(217, 48, 37, 0.1);
+  color: var(--color-danger);
+}
+
+/* Footer */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.saved-indicator {
+  font-size: 13px;
+  color: var(--color-success);
+}
+
+.btn-primary {
+  padding: 8px 18px;
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 14px;
+  transition: background var(--transition);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}

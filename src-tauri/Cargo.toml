@@ -1,0 +1,52 @@
+[package]
+name = "deepm"
+version = "0.1.0"
+description = "DeepM — local translation app powered by HY-MT"
+authors = []
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "deepm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "deepm"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
+
+rdev = "0.5"
+arboard = "3"
+enigo = "0.2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+reqwest = { version = "0.12", features = ["stream", "json"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+futures-util = "0.3"
+dirs = "5"
+log = "0.4"
+env_logger = "0.11"
+whatlang = "0.16"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

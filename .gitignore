@@ -1,0 +1,38 @@
+# ── Node ──────────────────────────────────────────────────
+node_modules/
+dist/
+
+# ── Rust build artifacts ──────────────────────────────────
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.cargo/
+
+# ── llama.cpp binaries ────────────────────────────────────
+# Download separately from github.com/ggerganov/llama.cpp/releases
+src-tauri/binaries/
+
+# ── Downloaded archives & partial downloads ───────────────
+*.zip
+*.crdownload
+*.7z
+*.tar.gz
+
+# ── Model files (downloaded in-app) ──────────────────────
+*.gguf
+*.ggml
+
+# ── Environment ───────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
