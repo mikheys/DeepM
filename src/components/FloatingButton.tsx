@@ -6,8 +6,8 @@ import "./FloatingButton.css";
 
 type UIState = "idle" | "loading" | "result" | "error";
 
-type SelectionResult = {
-  translated_text: string;
+type FloatingShow = {
+  text: string;
   source_lang: string;
   target_lang: string;
 };
@@ -20,6 +20,11 @@ export default function FloatingButton() {
 
   const uiStateRef = useRef<UIState>("idle");
   useEffect(() => { uiStateRef.current = uiState; }, [uiState]);
+
+  // The selection captured by the backend, ready to translate on click.
+  const pendingTextRef = useRef("");
+  const pendingSrcRef = useRef("auto");
+  const pendingTgtRef = useRef("ru");
 
   // Force the document background fully transparent (overrides global.css).
   useEffect(() => {
@@ -40,17 +45,23 @@ export default function FloatingButton() {
     setUiState("idle");
     setTranslation("");
     setLangLabel("");
+    pendingTextRef.current = "";
     invoke("hide_floating_button").catch(() => {});
   };
 
-  // Copy the selection and translate it — done ONLY on button click, so merely
-  // selecting text never disturbs the source app (important for terminals).
+  // Translate the already-captured selection. The backend grabbed the text when
+  // the button appeared, so clicking translates instantly without copying again.
   const runTranslate = async () => {
+    const txt = pendingTextRef.current;
+    if (!txt.trim()) { doHide(); return; }
     setUiState("loading");
     try {
-      const r = await invoke<SelectionResult>("translate_selection");
-      setTranslation(r.translated_text);
-      setLangLabel(`${r.source_lang.toUpperCase()} → ${r.target_lang.toUpperCase()}`);
+      const result = await invoke<string>("quick_translate", {
+        sourceText: txt,
+        sourceLang: pendingSrcRef.current,
+        targetLang: pendingTgtRef.current,
+      });
+      setTranslation(result);
       setUiState("result");
       setExpanded(true);
     } catch (e) {
@@ -66,10 +77,14 @@ export default function FloatingButton() {
     };
     window.addEventListener("keydown", onKey);
 
-    // Selection happened: just show the (idle) button. No text is copied yet.
-    const unsub = listen("floating_show", () => {
+    // Backend captured a selection: store it and show the (idle) button.
+    const unsub = listen<FloatingShow>("floating_show", (e) => {
+      const p = e.payload;
+      pendingTextRef.current = p.text ?? "";
+      pendingSrcRef.current = p.source_lang ?? "auto";
+      pendingTgtRef.current = p.target_lang ?? "ru";
       setTranslation("");
-      setLangLabel("");
+      setLangLabel(`${(p.source_lang ?? "").toUpperCase()} → ${(p.target_lang ?? "").toUpperCase()}`);
       setUiState("idle");
       setExpanded(false);
       setVisible(true);

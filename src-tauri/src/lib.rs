@@ -172,10 +172,42 @@ async fn detect_language(text: String) -> Result<String, String> {
 }
 
 fn detect_language_internal(text: &str) -> String {
-    use whatlang::Lang;
-    whatlang::detect(text)
-        .map(|i| lang_to_code(i.lang()))
-        .unwrap_or_else(|| "en".to_string())
+    // The user works primarily in Russian and English. whatlang frequently
+    // mislabels short Russian text as Ukrainian, or short Latin text as some
+    // other language, which then drives the wrong translation direction.
+    // So: classify by script first. Any Cyrillic => Russian, plain Latin =>
+    // English. Only when a clearly different script dominates (CJK, Arabic,
+    // Hebrew, Thai, …) do we defer to whatlang for an accurate label.
+    let mut cyrillic = 0usize;
+    let mut latin = 0usize;
+    let mut other = 0usize;
+    for ch in text.chars() {
+        if ('\u{0400}'..='\u{052F}').contains(&ch) {
+            cyrillic += 1;
+        } else if ch.is_ascii_alphabetic() {
+            latin += 1;
+        } else if ch.is_alphabetic() {
+            other += 1;
+        }
+    }
+
+    let letters = cyrillic + latin + other;
+    if letters == 0 {
+        return "en".to_string();
+    }
+
+    // A non-Latin/non-Cyrillic script dominates → trust whatlang (zh/ja/ko/…).
+    if other * 2 > letters {
+        return whatlang::detect(text)
+            .map(|i| lang_to_code(i.lang()))
+            .unwrap_or_else(|| "en".to_string());
+    }
+
+    if cyrillic > 0 && cyrillic >= latin {
+        "ru".to_string()
+    } else {
+        "en".to_string()
+    }
 }
 
 fn lang_to_code(lang: whatlang::Lang) -> String {
@@ -791,9 +823,6 @@ pub fn run() {
                     let has_selection = payload.as_ref()
                         .and_then(|v| v["has_selection"].as_bool())
                         .unwrap_or(false);
-                    let needs_verify = payload.as_ref()
-                        .and_then(|v| v["verify"].as_bool())
-                        .unwrap_or(false);
                     let click_x = payload.as_ref()
                         .and_then(|v| v["x"].as_f64())
                         .unwrap_or(0.0);
@@ -849,41 +878,44 @@ pub fn run() {
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
 
-                        // Debounce: wait a moment, then show only if no newer mouse event
-                        // arrived meanwhile. Prevents the button from flashing when the
-                        // user makes a selection and immediately clicks it away.
+                        // Debounce: wait a moment, then proceed only if no newer mouse
+                        // event arrived meanwhile. Prevents flashing when the user makes
+                        // a selection and immediately clicks it away.
                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                         if gen_arc.load(Ordering::SeqCst) != my_gen {
                             return;
                         }
 
-                        // For an ambiguous multi-click (double/triple), confirm that text
-                        // was really selected before showing — otherwise double-clicking
-                        // empty space (e.g. the desktop) would pop the button up. A drag
-                        // is trusted directly and is NOT verified, so it never sends Ctrl+C
-                        // (keeps console/terminal selections intact).
-                        if needs_verify {
-                            let confirmed = tokio::task::spawn_blocking(
-                                os_integration::get_selected_text
-                            ).await;
-                            match confirmed {
-                                Ok(Some(t)) if !t.trim().is_empty() => {}
-                                _ => return, // nothing selected — don't show
-                            }
-                            if gen_arc.load(Ordering::SeqCst) != my_gen {
-                                return;
-                            }
+                        // Capture the selection now. This doubles as verification: if
+                        // Ctrl+C yields no text, the "drag" wasn't a text selection
+                        // (e.g. moving a window or dragging on empty space), so the
+                        // button must NOT appear. Apps where Ctrl+C is disruptive
+                        // (terminals) can be added to the exclusion list.
+                        let captured = tokio::task::spawn_blocking(
+                            os_integration::get_selected_text
+                        ).await;
+                        let text = match captured {
+                            Ok(Some(t)) if !t.trim().is_empty() => t,
+                            _ => return, // nothing selected — don't show the button
+                        };
+                        if gen_arc.load(Ordering::SeqCst) != my_gen {
+                            return;
                         }
 
-                        // Just SHOW the button next to the cursor. We do NOT copy the
-                        // selection here — sending Ctrl+C would wipe the selection in
-                        // console/terminal apps. The selected text is copied only when
-                        // the user actually clicks the button (translate_selection).
+                        // Detect language + target direction here so the button can
+                        // translate instantly on click without copying again.
+                        let src = detect_language_internal(&text);
+                        let tgt = if src == "ru" { "en" } else { "ru" };
+
                         if let Err(e) = os_integration::show_floating(&h, x, y) {
                             log::debug!("show_floating failed: {e}");
                             return;
                         }
-                        let _ = h.emit_to("floating", "floating_show", ());
+                        let _ = h.emit_to("floating", "floating_show", serde_json::json!({
+                            "text": text,
+                            "source_lang": src,
+                            "target_lang": tgt,
+                        }));
                     });
                 });
             }

@@ -227,18 +227,16 @@ pub fn spawn_hook(
                                 st.last_click_time = None;
                             }
 
-                            // A selection is either a drag OR a double/triple-click (word /
-                            // line select). A drag is a reliable signal, so we show the
-                            // button straight away. A multi-click is ambiguous (double-
-                            // clicking the desktop selects nothing), so it carries
-                            // verify=true and the backend confirms a real selection exists
-                            // before showing the button.
+                            // A selection candidate is either a drag OR a double/triple-
+                            // click (word/line select). The backend then verifies it by
+                            // actually reading the selection (Ctrl+C); if nothing was
+                            // selected (window move, empty drag, desktop double-click),
+                            // no button is shown.
                             let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
                             let has_selection = had_drag || is_multi_click;
 
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
                                 "has_selection": has_selection,
-                                "verify": is_multi_click,
                                 "x": cx,
                                 "y": cy,
                             }));
