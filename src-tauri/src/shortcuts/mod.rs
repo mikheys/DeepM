@@ -8,6 +8,7 @@ pub struct ShortcutConfig {
     pub triple_copy: String,
     pub translate_replace: String,
     pub triple_copy_interval_ms: u64,
+    pub triple_copy_count: u32,
 }
 
 impl Default for ShortcutConfig {
@@ -16,6 +17,7 @@ impl Default for ShortcutConfig {
             triple_copy: "Ctrl+C+C+C".to_string(),
             translate_replace: "Ctrl+Shift+T".to_string(),
             triple_copy_interval_ms: 500,
+            triple_copy_count: 3,
         }
     }
 }
@@ -26,6 +28,7 @@ impl ShortcutConfig {
             triple_copy: settings.hotkeys.triple_copy.clone(),
             translate_replace: settings.hotkeys.translate_replace.clone(),
             triple_copy_interval_ms: settings.triple_copy_interval_ms,
+            triple_copy_count: settings.triple_copy_count.clamp(2, 5),
         }
     }
 }

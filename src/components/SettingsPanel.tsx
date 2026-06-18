@@ -4,6 +4,7 @@ import type { Locale } from "../i18n";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import { getSettings, saveSettings } from "../api";
 import { useI18n } from "../i18n-context";
+import HotkeyCapture from "./HotkeyCapture";
 import "./SettingsPanel.css";
 
 type Props = {
@@ -154,24 +155,33 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
 
         <section className="settings-section">
           <h2 className="settings-section-title">{t.settings_hotkeys}</h2>
-          <div className="settings-row">
-            <label>{t.settings_triple_copy}</label>
-            <input
-              type="text"
-              className="hotkey-input"
-              value={settings.hotkeys.triple_copy}
-              onChange={(e) => updateHotkey("triple_copy", e.target.value)}
-            />
-          </div>
+
           <div className="settings-row">
             <label>{t.settings_translate_replace}</label>
-            <input
-              type="text"
-              className="hotkey-input"
+            <HotkeyCapture
               value={settings.hotkeys.translate_replace}
-              onChange={(e) => updateHotkey("translate_replace", e.target.value)}
+              onChange={(v) => updateHotkey("translate_replace", v)}
             />
+            <span className="settings-hint">{t.settings_hotkey_hint}</span>
           </div>
+
+          <div className="settings-row">
+            <label>{t.settings_copy_taps}</label>
+            <select
+              value={settings.triple_copy_count}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                update("triple_copy_count", n);
+                // keep the display string in sync (e.g. "Ctrl+C ×2")
+                updateHotkey("triple_copy", `Ctrl+C ×${n}`);
+              }}
+            >
+              <option value={2}>{t.taps_double}</option>
+              <option value={3}>{t.taps_triple}</option>
+            </select>
+            <span className="settings-hint">{t.settings_copy_taps_hint}</span>
+          </div>
+
           <div className="settings-row">
             <label>{t.settings_triple_interval}</label>
             <input

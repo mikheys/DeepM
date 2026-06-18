@@ -96,6 +96,32 @@
   width: 160px;
 }
 
+/* Click-to-record hotkey field */
+.hotkey-capture {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 160px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.hotkey-capture:hover {
+  border-color: var(--color-border-focus);
+}
+
+.hotkey-capture.capturing {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  outline: none;
+}
+
 /* Glossary */
 .glossary-add-row {
   display: flex;

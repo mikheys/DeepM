@@ -14,23 +14,30 @@ struct HookState {
     held_keys: HashSet<Key>,
     c_press_times: Vec<Instant>,
     interval_ms: u64,
+    /// How many quick Ctrl+C presses trigger the copy→open action (>= 2).
+    copy_count: usize,
     last_pos: (f64, f64),
     mouse_down_pos: Option<(f64, f64)>,
     /// Tracks consecutive quick clicks to detect double/triple-click word selection.
     last_click_time: Option<Instant>,
     last_click_pos: (f64, f64),
+    /// True once the translate-replace combo has fired, until its keys are
+    /// released. Prevents auto-repeat from firing it many times in a row.
+    tr_fired: bool,
 }
 
 impl HookState {
-    fn new(interval_ms: u64) -> Self {
+    fn new(interval_ms: u64, copy_count: usize) -> Self {
         Self {
             held_keys: HashSet::new(),
             c_press_times: Vec::new(),
             interval_ms,
+            copy_count: copy_count.max(2),
             last_pos: (0.0, 0.0),
             mouse_down_pos: None,
             last_click_time: None,
             last_click_pos: (0.0, 0.0),
+            tr_fired: false,
         }
     }
 
@@ -59,49 +66,89 @@ impl HookState {
             || self.held_keys.contains(&Key::ShiftRight)
     }
 
+    fn alt_held(&self) -> bool {
+        self.held_keys.contains(&Key::Alt) || self.held_keys.contains(&Key::AltGr)
+    }
+
     fn record_c_press(&mut self) -> bool {
         let now = Instant::now();
         let window = Duration::from_millis(self.interval_ms);
         self.c_press_times.retain(|t| now.duration_since(*t) <= window);
         self.c_press_times.push(now);
-        if self.c_press_times.len() >= 3 {
+        if self.c_press_times.len() >= self.copy_count {
             self.c_press_times.clear();
             return true;
         }
         false
     }
 
+    /// Matches a hotkey string like "Ctrl+Shift+T" against the currently held
+    /// keys. Supports A–Z, 0–9 and F1–F12 as the main key, with exact Ctrl /
+    /// Shift / Alt modifiers.
     fn is_translate_replace_combo(&self, hotkey: &str) -> bool {
-        let parts: HashSet<&str> = hotkey.split('+').map(str::trim).collect();
-        let ctrl = parts.contains("Ctrl");
-        let shift = parts.contains("Shift");
-        let key_char = parts.iter()
-            .find(|&&p| p != "Ctrl" && p != "Shift" && p != "Alt")
-            .copied()
-            .unwrap_or("");
+        let parts: Vec<&str> = hotkey
+            .split('+')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if parts.is_empty() {
+            return false;
+        }
 
-        let ctrl_ok = !ctrl || self.ctrl_held();
-        let shift_ok = !shift || self.shift_held();
-        let key_ok = match key_char {
-            "T" => self.held_keys.contains(&Key::KeyT),
-            "U" => self.held_keys.contains(&Key::KeyU),
-            "F1" => self.held_keys.contains(&Key::F1),
-            _ => false,
+        let need_ctrl = parts.iter().any(|p| p.eq_ignore_ascii_case("ctrl"));
+        let need_shift = parts.iter().any(|p| p.eq_ignore_ascii_case("shift"));
+        let need_alt = parts.iter().any(|p| p.eq_ignore_ascii_case("alt"));
+
+        let main = parts.iter().find(|p| {
+            !p.eq_ignore_ascii_case("ctrl")
+                && !p.eq_ignore_ascii_case("shift")
+                && !p.eq_ignore_ascii_case("alt")
+        });
+
+        let main_key = match main.and_then(|m| key_from_name(m)) {
+            Some(k) => k,
+            None => return false,
         };
-        ctrl_ok && shift_ok && key_ok
-    }
 
+        self.ctrl_held() == need_ctrl
+            && self.shift_held() == need_shift
+            && self.alt_held() == need_alt
+            && self.held_keys.contains(&main_key)
+    }
+}
+
+/// Maps a key name (e.g. "T", "5", "F3") to the corresponding rdev key.
+fn key_from_name(name: &str) -> Option<Key> {
+    use rdev::Key::*;
+    let n = name.to_ascii_uppercase();
+    Some(match n.as_str() {
+        "A" => KeyA, "B" => KeyB, "C" => KeyC, "D" => KeyD, "E" => KeyE,
+        "F" => KeyF, "G" => KeyG, "H" => KeyH, "I" => KeyI, "J" => KeyJ,
+        "K" => KeyK, "L" => KeyL, "M" => KeyM, "N" => KeyN, "O" => KeyO,
+        "P" => KeyP, "Q" => KeyQ, "R" => KeyR, "S" => KeyS, "T" => KeyT,
+        "U" => KeyU, "V" => KeyV, "W" => KeyW, "X" => KeyX, "Y" => KeyY,
+        "Z" => KeyZ,
+        "0" => Num0, "1" => Num1, "2" => Num2, "3" => Num3, "4" => Num4,
+        "5" => Num5, "6" => Num6, "7" => Num7, "8" => Num8, "9" => Num9,
+        "F1" => F1, "F2" => F2, "F3" => F3, "F4" => F4, "F5" => F5, "F6" => F6,
+        "F7" => F7, "F8" => F8, "F9" => F9, "F10" => F10, "F11" => F11, "F12" => F12,
+        _ => return None,
+    })
 }
 
 pub fn spawn_hook(
     app: AppHandle,
     translate_replace_hotkey: String,
     triple_copy_interval_ms: u64,
+    triple_copy_count: u32,
 ) {
     std::thread::Builder::new()
         .name("deepm-hook".into())
         .spawn(move || {
-            let state = Arc::new(Mutex::new(HookState::new(triple_copy_interval_ms)));
+            let state = Arc::new(Mutex::new(HookState::new(
+                triple_copy_interval_ms,
+                triple_copy_count as usize,
+            )));
 
             let callback = {
                 let app = app.clone();
@@ -124,8 +171,15 @@ pub fn spawn_hook(
                                 }
                             }
 
+                            // Fire translate-replace once per chord. Without the
+                            // tr_fired guard, key auto-repeat re-emits this every few
+                            // milliseconds, causing the translation to be pasted
+                            // multiple times.
                             if st.is_translate_replace_combo(&tr_hotkey) {
-                                let _ = app.emit("hotkey_translate_replace", ());
+                                if !st.tr_fired {
+                                    st.tr_fired = true;
+                                    let _ = app.emit("hotkey_translate_replace", ());
+                                }
                             }
 
                             // Hide floating button when user types / deletes text
@@ -149,6 +203,10 @@ pub fn spawn_hook(
                             st.held_keys.remove(&key);
                             if key == Key::ControlLeft || key == Key::ControlRight {
                                 st.c_press_times.clear();
+                            }
+                            // Re-arm the translate-replace combo once its keys are released.
+                            if st.tr_fired && !st.is_translate_replace_combo(&tr_hotkey) {
+                                st.tr_fired = false;
                             }
                         }
 

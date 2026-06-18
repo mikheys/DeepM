@@ -39,6 +39,9 @@ pub struct AppSettings {
     pub autostart: bool,
     pub start_in_tray: bool,
     pub triple_copy_interval_ms: u64,
+    /// How many quick Ctrl+C presses trigger the "copy → open DeepM" action (2 or 3).
+    #[serde(default = "default_triple_copy_count")]
+    pub triple_copy_count: u32,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -47,6 +50,10 @@ pub struct AppSettings {
 
 fn default_schema_version() -> u32 {
     1
+}
+
+fn default_triple_copy_count() -> u32 {
+    3
 }
 
 fn default_locale() -> String {
@@ -69,6 +76,7 @@ impl Default for AppSettings {
             autostart: false,
             start_in_tray: false,
             triple_copy_interval_ms: 500,
+            triple_copy_count: 3,
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

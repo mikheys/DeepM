@@ -62,6 +62,12 @@ export type Strings = {
   settings_triple_copy: string;
   settings_translate_replace: string;
   settings_triple_interval: string;
+  settings_hotkey_hint: string;
+  hotkey_press: string;
+  settings_copy_taps: string;
+  settings_copy_taps_hint: string;
+  taps_double: string;
+  taps_triple: string;
   settings_interface: string;
   settings_floating: string;
   settings_floating_hint: string;
@@ -141,7 +147,13 @@ const en: Strings = {
   settings_hotkeys: "Hotkeys",
   settings_triple_copy: "Triple-copy trigger",
   settings_translate_replace: "Translate & replace",
-  settings_triple_interval: "Triple-copy interval (ms)",
+  settings_triple_interval: "Multi-copy interval (ms)",
+  settings_hotkey_hint: "Click the field and press the key combination",
+  hotkey_press: "Press keys…",
+  settings_copy_taps: "Quick-copy presses",
+  settings_copy_taps_hint: "How many fast Ctrl+C presses open DeepM with the copied text",
+  taps_double: "Double (Ctrl+C ×2)",
+  taps_triple: "Triple (Ctrl+C ×3)",
   settings_interface: "Interface",
   settings_floating: "Show floating button",
   settings_floating_hint: "Appears when text is selected",
@@ -217,7 +229,13 @@ const ru: Strings = {
   settings_hotkeys: "Горячие клавиши",
   settings_triple_copy: "Тройной Ctrl+C",
   settings_translate_replace: "Перевод и замена",
-  settings_triple_interval: "Интервал тройного нажатия (мс)",
+  settings_triple_interval: "Интервал нажатий (мс)",
+  settings_hotkey_hint: "Нажмите на поле и введите сочетание клавиш",
+  hotkey_press: "Нажмите клавиши…",
+  settings_copy_taps: "Нажатий Ctrl+C",
+  settings_copy_taps_hint: "Сколько быстрых Ctrl+C открывают DeepM со скопированным текстом",
+  taps_double: "Двойное (Ctrl+C ×2)",
+  taps_triple: "Тройное (Ctrl+C ×3)",
   settings_interface: "Интерфейс",
   settings_floating: "Плавающая кнопка",
   settings_floating_hint: "Появляется при выделении текста",

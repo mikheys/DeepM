@@ -384,7 +384,15 @@ async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::V
 
     let text = match text {
         Some(t) if !t.trim().is_empty() => t,
-        _ => return Err("Не удалось получить выделенный текст".into()),
+        _ => {
+            // Fallback for apps that don't copy via Ctrl+C (MobaXterm, some
+            // terminals) but DO put the selection on the clipboard via
+            // "copy on select": just use whatever is on the clipboard.
+            os_integration::read_clipboard()
+                .ok()
+                .filter(|t| !t.trim().is_empty())
+                .ok_or("Не удалось получить выделенный текст")?
+        }
     };
 
     let src = detect_language_internal(&text);
@@ -722,6 +730,7 @@ pub fn run() {
                 handle.clone(),
                 shortcut_cfg.translate_replace.clone(),
                 shortcut_cfg.triple_copy_interval_ms,
+                shortcut_cfg.triple_copy_count,
             );
 
             // Listen for hook events and dispatch to commands
