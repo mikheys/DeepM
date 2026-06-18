@@ -38,6 +38,9 @@ export type Strings = {
   download_btn: string;
   delete_btn: string;
   cannot_delete_active: string;
+  model_external_title: string;
+  model_external_hint: string;
+  model_external_placeholder: string;
 
   // History
   search_placeholder: string;
@@ -141,6 +144,9 @@ const en: Strings = {
   download_btn: "Download",
   delete_btn: "✕",
   cannot_delete_active: "Cannot delete active model",
+  model_external_title: "External model",
+  model_external_hint: "Load a .gguf file from disk (e.g. a finetune)",
+  model_external_placeholder: "Full path to a .gguf file",
 
   search_placeholder: "Search history…",
   clear_all: "Clear all",
@@ -238,6 +244,9 @@ const ru: Strings = {
   download_btn: "Скачать",
   delete_btn: "✕",
   cannot_delete_active: "Нельзя удалить активную модель",
+  model_external_title: "Сторонняя модель",
+  model_external_hint: "Загрузить файл .gguf с диска (например, файнтюн)",
+  model_external_placeholder: "Полный путь к файлу .gguf",
 
   search_placeholder: "Поиск по истории…",
   clear_all: "Очистить всё",

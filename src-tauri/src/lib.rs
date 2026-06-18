@@ -14,7 +14,7 @@ use config::{AppSettings, load_settings, save_settings as persist_settings};
 use core::{
     engine::{TranslationEngine, TranslationRequest},
     history::{HistoryEntry, TranslationHistory},
-    model_manager::{ModelManager, ModelStatus},
+    model_manager::{DownloadState, ModelManager, ModelSpec, ModelStatus},
 };
 use shortcuts::ShortcutConfig;
 
@@ -34,6 +34,8 @@ pub(crate) struct AppState {
     /// Bumped on every mouse-selection event; used to debounce the floating
     /// button so a quick accidental select+deselect doesn't make it flash.
     selection_gen: Arc<AtomicU64>,
+    /// Live hotkey config shared with the global hook thread; updated on save.
+    hook_config: Arc<os_integration::SharedHookConfig>,
 }
 
 // ── Translation Commands ──────────────────────────────────────────────────────
@@ -58,6 +60,9 @@ async fn start_model_download(
     let manager = Arc::clone(&state.model_manager);
     let engine = Arc::clone(&state.engine);
     let app_clone = app.clone();
+    let progress_manager = Arc::clone(&state.model_manager);
+    let dl_size = size.clone();
+    let dl_quant = quantization.clone();
 
     tokio::spawn(async move {
         let result = manager
@@ -66,6 +71,8 @@ async fn start_model_download(
                 &size,
                 &quantization,
                 move |progress, speed_mbps| {
+                    // Persist progress so reopening the tab resumes the display.
+                    progress_manager.set_download_state(&dl_size, &dl_quant, progress, speed_mbps);
                     let _ = app_clone.emit(
                         "download_progress",
                         serde_json::json!({ "progress": progress, "speed_mbps": speed_mbps }),
@@ -74,23 +81,41 @@ async fn start_model_download(
             )
             .await;
 
+        manager.clear_download_state();
+
         match result {
             Ok(path) => {
-                match engine.start(path).await {
-                    Ok(()) => {
-                        let _ = app.emit("model_ready", ());
-                        os_integration::tray::update_tray_model_status(&app, "model ready");
-                    }
-                    Err(e) => {
-                        log::error!("Engine start failed: {e}");
-                        let _ = app.emit("model_error", e.to_string());
-                        os_integration::tray::update_tray_model_status(&app, "engine error");
+                // Auto-load only when nothing is running yet (first / onboarding
+                // model). If a model is already active, just mark this one as
+                // downloaded — the user loads it explicitly via the Load button,
+                // so an in-progress translation session isn't disrupted.
+                if engine.is_running().await {
+                    let _ = manager.probe(&model_dir, &size, &quantization).await;
+                    let _ = app.emit("model_downloaded", ());
+                } else {
+                    match engine.start(path).await {
+                        Ok(()) => {
+                            let _ = manager.probe(&model_dir, &size, &quantization).await;
+                            if let Ok(mut s) = config::load_settings() {
+                                s.model_size = size.clone();
+                                s.quantization = quantization.clone();
+                                let _ = persist_settings(&s);
+                            }
+                            let _ = app.emit("model_ready", ());
+                            os_integration::tray::update_tray_model_status(&app, "model ready");
+                        }
+                        Err(e) => {
+                            log::error!("Engine start failed: {e}");
+                            let _ = app.emit("model_error", e.to_string());
+                            os_integration::tray::update_tray_model_status(&app, "engine error");
+                        }
                     }
                 }
             }
             Err(e) => {
                 if e.to_string().contains("cancelled") {
                     log::info!("Download cancelled by user");
+                    let _ = app.emit("download_cancelled", ());
                 } else {
                     log::error!("Download failed: {e}");
                     let _ = app.emit("model_error", e.to_string());
@@ -254,6 +279,14 @@ async fn save_settings(
 ) -> Result<(), String> {
     persist_settings(&settings).map_err(|e| e.to_string())?;
     let new_floating = settings.show_floating_button;
+
+    // Apply hotkey changes to the running hook immediately (no restart needed).
+    state.hook_config.update(
+        settings.hotkeys.translate_replace.clone(),
+        settings.triple_copy_interval_ms,
+        settings.triple_copy_count,
+    );
+
     {
         let mut s = state.settings.lock().await;
         *s = settings;
@@ -549,6 +582,100 @@ async fn delete_model(
     Ok(())
 }
 
+/// Current download progress (if any) — lets the UI resume after a tab switch.
+#[tauri::command]
+async fn get_download_state(state: State<'_, AppState>) -> Result<Option<DownloadState>, String> {
+    Ok(state.model_manager.get_download_state())
+}
+
+/// Loads a specific downloaded variant as the active model and (re)starts the
+/// engine on it. This is what the per-variant "Load" button calls — it actually
+/// switches the active model, unlike restart_engine which reloads the current one.
+#[tauri::command]
+async fn load_model(
+    size: String,
+    quantization: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let model_dir = state.settings.lock().await.model_path.clone();
+    let path = PathBuf::from(&model_dir)
+        .join(format!("HY-MT1.5-{}-{}.gguf", size, quantization));
+    if !path.exists() {
+        return Err("Файл модели не найден — скачайте её сначала.".into());
+    }
+
+    // Persist as the active model so it survives restarts.
+    {
+        let mut s = state.settings.lock().await;
+        s.model_size = size.clone();
+        s.quantization = quantization.clone();
+        let snapshot = s.clone();
+        drop(s);
+        let _ = persist_settings(&snapshot);
+    }
+    *state.model_manager.current_spec.lock().await = Some(ModelSpec {
+        size: size.clone(),
+        quantization: quantization.clone(),
+    });
+    *state.model_manager.status.lock().await =
+        ModelStatus::Ready { path: path.to_string_lossy().to_string() };
+
+    // Start the engine in the background; the UI waits for model_ready/error.
+    let engine = Arc::clone(&state.engine);
+    let app_c = app.clone();
+    tokio::spawn(async move {
+        match engine.start(path).await {
+            Ok(()) => {
+                let _ = app_c.emit("model_ready", ());
+                os_integration::tray::update_tray_model_status(&app_c, "model ready");
+            }
+            Err(e) => {
+                let _ = app_c.emit("model_error", e.to_string());
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Loads an arbitrary .gguf model from disk (e.g. a finetune the user downloaded
+/// elsewhere). The engine is started on it and it becomes the active model.
+#[tauri::command]
+async fn load_external_model(
+    path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let is_gguf = p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("gguf"))
+        .unwrap_or(false);
+    if !p.exists() || !is_gguf {
+        return Err("Укажите существующий файл .gguf".into());
+    }
+
+    // External model has no size/quant spec.
+    *state.model_manager.current_spec.lock().await = None;
+    *state.model_manager.status.lock().await =
+        ModelStatus::Ready { path: path.clone() };
+
+    let engine = Arc::clone(&state.engine);
+    let app_c = app.clone();
+    tokio::spawn(async move {
+        match engine.start(p).await {
+            Ok(()) => {
+                let _ = app_c.emit("model_ready", ());
+                os_integration::tray::update_tray_model_status(&app_c, "model ready");
+            }
+            Err(e) => {
+                let _ = app_c.emit("model_error", e.to_string());
+            }
+        }
+    });
+    Ok(())
+}
+
 // ── Engine restart command ───────────────────────────────────────────────────
 
 #[tauri::command]
@@ -661,6 +788,11 @@ pub fn run() {
     let model_manager = Arc::new(ModelManager::new());
     let cursor_pos: Arc<StdMutex<(f64, f64)>> = Arc::new(StdMutex::new((0.0, 0.0)));
     let main_focused = Arc::new(AtomicBool::new(false));
+    let hook_config = Arc::new(os_integration::SharedHookConfig::new(
+        shortcut_cfg.translate_replace.clone(),
+        shortcut_cfg.triple_copy_interval_ms,
+        shortcut_cfg.triple_copy_count,
+    ));
 
     let state = AppState {
         settings: Mutex::new(settings),
@@ -671,6 +803,7 @@ pub fn run() {
         last_cursor: Arc::clone(&cursor_pos),
         main_window_focused: Arc::clone(&main_focused),
         selection_gen: Arc::new(AtomicU64::new(0)),
+        hook_config: Arc::clone(&hook_config),
     };
 
     tauri::Builder::default()
@@ -769,13 +902,8 @@ pub fn run() {
                 });
             }
 
-            // Spawn global keyboard/mouse hook
-            os_integration::spawn_hook(
-                handle.clone(),
-                shortcut_cfg.translate_replace.clone(),
-                shortcut_cfg.triple_copy_interval_ms,
-                shortcut_cfg.triple_copy_count,
-            );
+            // Spawn global keyboard/mouse hook (reads live config)
+            os_integration::spawn_hook(handle.clone(), Arc::clone(&hook_config));
 
             // Listen for hook events and dispatch to commands
             {
@@ -956,6 +1084,9 @@ pub fn run() {
             restart_engine,
             list_downloaded_models,
             delete_model,
+            get_download_state,
+            load_model,
+            load_external_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DeepM");

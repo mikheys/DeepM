@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useCallback } from "react";
-import type { ModelSize, Quantization, ModelStatus } from "../types";
+import type { ModelSize, Quantization } from "../types";
 import {
   getModelStatus,
   startModelDownload,
   cancelModelDownload,
   restartEngine,
+  loadModel,
+  loadExternalModel,
+  getDownloadState,
   listDownloadedModels,
   deleteModel,
   onDownloadProgress,
   onModelReady,
   onModelError,
+  onModelDownloaded,
+  onDownloadCancelled,
 } from "../api";
 import { useI18n } from "../i18n-context";
 import "./ModelManager.css";
@@ -30,101 +35,142 @@ const VARIANTS: Variant[] = [
   { size: "7B",   quant: "Q8_0",   label: "7B Q8_0",     fileSize: "~7.7 GB" },
 ];
 
-function variantKey(size: string, quant: string) { return `${size}/${quant}`; }
+const key = (size: string, quant: string) => `${size}/${quant}`;
+
+// Derive the active built-in variant key from a model file path (null if it's
+// an external/custom model).
+function variantFromPath(path: string): string | null {
+  const m = path.match(/HY-MT1\.5-(1\.8B|7B)-(Q4_K_M|Q6_K|Q8_0)\.gguf$/i);
+  return m ? key(m[1], m[2]) : null;
+}
+
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
 
 export default function ModelManager({ onModelReady: onReady, isOnboarding }: Props) {
   const { t } = useI18n();
-  const [status, setStatus] = useState<ModelStatus>({ type: "not_downloaded" });
-  const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
   const [activeVariant, setActiveVariant] = useState<string | null>(null);
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const [isExternalActive, setIsExternalActive] = useState(false);
+
+  const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadSpeed, setDownloadSpeed] = useState(0);
-  const [engineError, setEngineError] = useState<string | null>(null);
-  const [engineRetrying, setEngineRetrying] = useState(false);
+
+  const [busyKey, setBusyKey] = useState<string | null>(null); // variant being loaded
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [engineError, setEngineError] = useState<string | null>(null);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const [externalPath, setExternalPath] = useState("");
 
   const refreshDownloaded = useCallback(async () => {
     try {
       const pairs = await listDownloadedModels();
-      setDownloaded(new Set(pairs.map(([s, q]) => variantKey(s, q))));
+      setDownloaded(new Set(pairs.map(([s, q]) => key(s, q))));
     } catch {
-      // model dir may not exist yet
       setDownloaded(new Set());
     }
   }, []);
 
-  useEffect(() => {
-    getModelStatus().then((s) => {
-      setStatus(s);
+  const refreshStatus = useCallback(async () => {
+    try {
+      const s = await getModelStatus();
       if (s.type === "ready") {
         const path = (s as any).path as string;
-        const match = path.match(/HY-MT1\.5-(\w+\.?\w*)-(\w+)\.gguf$/i);
-        if (match) setActiveVariant(variantKey(match[1], match[2]));
+        const v = variantFromPath(path ?? "");
+        setActiveVariant(v);
+        setActivePath(path ?? null);
+        setIsExternalActive(!!path && !v);
+      } else {
+        setActiveVariant(null);
+        setActivePath(null);
+        setIsExternalActive(false);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+    refreshDownloaded();
+
+    // Resume an in-progress download if we're re-entering the tab.
+    getDownloadState().then((d) => {
+      if (d) {
+        setDownloadingKey(key(d.size, d.quantization));
+        setDownloadProgress(d.progress);
+        setDownloadSpeed(d.speed_mbps);
       }
     }).catch(() => {});
 
-    refreshDownloaded();
-
-    const unsubProgress = onDownloadProgress((p, speed) => {
-      setDownloadProgress(p);
-      setDownloadSpeed(speed);
-    });
-    const unsubReady = onModelReady(() => {
-      setStatus({ type: "ready", path: "" });
-      setEngineError(null);
-      setEngineRetrying(false);
-      setDownloadingKey(null);
-      refreshDownloaded();
-      onReady();
-    });
-    const unsubError = onModelError((msg) => {
-      setEngineRetrying(false);
-      if (msg.includes("llama-server") || msg.includes("crashed") || msg.includes("start")) {
-        setEngineError(msg);
-      } else {
-        setStatus({ type: "error", message: msg });
+    const subs = [
+      onDownloadProgress((p, speed) => { setDownloadProgress(p); setDownloadSpeed(speed); }),
+      onModelReady(() => {
+        setEngineBusy(false);
+        setBusyKey(null);
+        setEngineError(null);
         setDownloadingKey(null);
-      }
-    });
+        refreshStatus();
+        refreshDownloaded();
+        onReady();
+      }),
+      onModelError((msg) => {
+        setEngineBusy(false);
+        setBusyKey(null);
+        setEngineError(msg);
+      }),
+      onModelDownloaded(() => {
+        setDownloadingKey(null);
+        refreshDownloaded();
+      }),
+      onDownloadCancelled(() => {
+        setDownloadingKey(null);
+        setDownloadProgress(0);
+      }),
+    ];
 
-    return () => {
-      unsubProgress.then((f) => f());
-      unsubReady.then((f) => f());
-      unsubError.then((f) => f());
-    };
-  }, []);
+    return () => { subs.forEach((p) => p.then((f) => f())); };
+  }, [refreshStatus, refreshDownloaded, onReady]);
 
   const handleDownload = async (size: ModelSize, quant: Quantization) => {
-    const key = variantKey(size, quant);
-    setDownloadingKey(key);
+    const k = key(size, quant);
+    setDownloadingKey(k);
     setDownloadProgress(0);
     setEngineError(null);
     try {
       await startModelDownload(size, quant);
     } catch (e) {
-      setStatus({ type: "error", message: String(e) });
+      setEngineError(String(e));
       setDownloadingKey(null);
     }
   };
 
   const handleCancel = async () => {
-    await cancelModelDownload();
+    await cancelModelDownload().catch(() => {});
     setDownloadingKey(null);
     setDownloadProgress(0);
-    setStatus({ type: "not_downloaded" });
+  };
+
+  const handleLoad = async (size: ModelSize, quant: Quantization) => {
+    const k = key(size, quant);
+    setBusyKey(k);
+    setEngineError(null);
+    try {
+      await loadModel(size, quant); // fire-and-forget; model_ready/error finishes it
+    } catch (e) {
+      setEngineError(String(e));
+      setBusyKey(null);
+    }
   };
 
   const handleDelete = async (size: ModelSize, quant: Quantization) => {
-    const key = variantKey(size, quant);
-    setDeletingKey(key);
+    const k = key(size, quant);
+    setDeletingKey(k);
     try {
       await deleteModel(size, quant);
       await refreshDownloaded();
-      if (activeVariant === key) {
-        setActiveVariant(null);
-        setStatus({ type: "not_downloaded" });
-      }
+      if (activeVariant === k) { setActiveVariant(null); refreshStatus(); }
     } catch (e) {
       setEngineError(String(e));
     } finally {
@@ -132,19 +178,24 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     }
   };
 
-  const handleRetryEngine = () => {
-    setEngineRetrying(true);
+  const handleReloadEngine = () => {
+    setEngineBusy(true);
     setEngineError(null);
-    // Fire-and-forget: restart_engine now spawns in background and returns immediately.
-    // model_ready / model_error events (listened above) will clear engineRetrying.
-    restartEngine().catch((e) => {
+    restartEngine().catch((e) => { setEngineError(String(e)); setEngineBusy(false); });
+  };
+
+  const handleLoadExternal = () => {
+    if (!externalPath.trim()) return;
+    setEngineBusy(true);
+    setEngineError(null);
+    loadExternalModel(externalPath.trim()).catch((e) => {
       setEngineError(String(e));
-      setEngineRetrying(false);
+      setEngineBusy(false);
     });
   };
 
-  const isReady = status.type === "ready";
   const isDownloadingAny = downloadingKey !== null;
+  const anyBusy = isDownloadingAny || busyKey !== null || engineBusy;
 
   return (
     <div className={`model-manager ${isOnboarding ? "onboarding-mode" : ""}`}>
@@ -155,20 +206,23 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         </div>
       )}
 
-      {/* Active model badge */}
-      {isReady && activeVariant && (
+      {/* Active model */}
+      {(activeVariant || isExternalActive) && (
         <div className="model-ready-card">
           <span className="ready-icon">✓</span>
           <div>
-            <div className="ready-title">{t.model_active} {activeVariant.replace("/", " ")}</div>
+            <div className="ready-title">
+              {t.model_active}{" "}
+              {isExternalActive ? baseName(activePath ?? "") : activeVariant?.replace("/", " ")}
+            </div>
             {!isOnboarding && (
               <button
                 className="btn-secondary engine-retry-btn"
-                onClick={handleRetryEngine}
-                disabled={engineRetrying}
+                onClick={handleReloadEngine}
+                disabled={engineBusy}
                 style={{ marginTop: 6 }}
               >
-                {engineRetrying ? t.restarting : t.restart_engine}
+                {engineBusy ? t.restarting : t.restart_engine}
               </button>
             )}
           </div>
@@ -180,19 +234,7 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         <div className="engine-error-card">
           <div className="engine-error-title">⚠ {t.engine_error}</div>
           <div className="engine-error-detail">{engineError}</div>
-          <button
-            className="btn-primary engine-retry-btn"
-            onClick={handleRetryEngine}
-            disabled={engineRetrying}
-          >
-            {engineRetrying ? t.starting : t.retry}
-          </button>
         </div>
-      )}
-
-      {/* Download error */}
-      {status.type === "error" && (
-        <div className="error-banner">⚠ {(status as any).message}</div>
       )}
 
       {/* Download progress */}
@@ -210,7 +252,7 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         </div>
       )}
 
-      {/* Variant grid */}
+      {/* Built-in variants */}
       <div className="model-section">
         <label className="section-label">
           {t.available_variants}
@@ -218,50 +260,43 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         </label>
         <div className="variant-grid">
           {VARIANTS.map((v) => {
-            const key = variantKey(v.size, v.quant);
-            const isActive = activeVariant === key;
-            const isPresent = downloaded.has(key);
-            const isThisDownloading = downloadingKey === key;
-            const isThisDeleting = deletingKey === key;
+            const k = key(v.size, v.quant);
+            const isActive = activeVariant === k;
+            const isPresent = downloaded.has(k);
+            const isThisDownloading = downloadingKey === k;
+            const isThisLoading = busyKey === k;
+            const isThisDeleting = deletingKey === k;
             return (
-              <div
-                key={key}
-                className={`variant-row${isActive ? " variant-active" : ""}`}
-              >
+              <div key={k} className={`variant-row${isActive ? " variant-active" : ""}`}>
                 <div className="variant-info">
                   <span className="variant-label">{v.label}</span>
                   <span className="variant-size">{v.fileSize}</span>
                 </div>
                 <div className="variant-actions">
-                  {isPresent ? (
+                  {isThisDownloading ? (
+                    <span className="variant-downloading">{Math.round(downloadProgress)}%</span>
+                  ) : isPresent ? (
                     <>
                       {isActive ? (
                         <span className="variant-loaded-badge">{t.loaded_badge}</span>
                       ) : (
                         <button
                           className="btn-small btn-load"
-                          disabled={isDownloadingAny || engineRetrying}
-                          onClick={() => {
-                            setActiveVariant(key);
-                            restartEngine().catch(() => {});
-                          }}
+                          disabled={anyBusy}
+                          onClick={() => handleLoad(v.size, v.quant)}
                         >
-                          {t.load_btn}
+                          {isThisLoading ? "…" : t.load_btn}
                         </button>
                       )}
                       <button
                         className="btn-small btn-delete"
-                        disabled={isThisDeleting || isDownloadingAny || isActive}
+                        disabled={isThisDeleting || anyBusy || isActive}
                         onClick={() => handleDelete(v.size, v.quant)}
-                        title={isActive ? t.cannot_delete_active : "Delete from disk"}
+                        title={isActive ? t.cannot_delete_active : t.delete_btn}
                       >
                         {isThisDeleting ? "…" : t.delete_btn}
                       </button>
                     </>
-                  ) : isThisDownloading ? (
-                    <span className="variant-downloading">
-                      {Math.round(downloadProgress)}%
-                    </span>
                   ) : (
                     <button
                       className="btn-small btn-download"
@@ -275,6 +310,31 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* External model */}
+      <div className="model-section">
+        <label className="section-label">
+          {t.model_external_title}
+          <span className="section-hint">{t.model_external_hint}</span>
+        </label>
+        <div className="external-row">
+          <input
+            type="text"
+            className="external-input"
+            placeholder={t.model_external_placeholder}
+            value={externalPath}
+            onChange={(e) => setExternalPath(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleLoadExternal(); }}
+          />
+          <button
+            className="btn-small btn-load"
+            disabled={!externalPath.trim() || anyBusy}
+            onClick={handleLoadExternal}
+          >
+            {t.load_btn}
+          </button>
         </div>
       </div>
     </div>

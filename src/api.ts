@@ -83,8 +83,35 @@ export function onModelError(callback: (msg: string) => void) {
   return listen<string>("model_error", (e) => callback(e.payload));
 }
 
+export function onModelDownloaded(callback: () => void) {
+  return listen("model_downloaded", () => callback());
+}
+
+export function onDownloadCancelled(callback: () => void) {
+  return listen("download_cancelled", () => callback());
+}
+
 export async function restartEngine(): Promise<void> {
   return invoke("restart_engine");
+}
+
+export async function loadModel(size: string, quantization: string): Promise<void> {
+  return invoke("load_model", { size, quantization });
+}
+
+export async function loadExternalModel(path: string): Promise<void> {
+  return invoke("load_external_model", { path });
+}
+
+export type DownloadState = {
+  size: string;
+  quantization: string;
+  progress: number;
+  speed_mbps: number;
+};
+
+export async function getDownloadState(): Promise<DownloadState | null> {
+  return invoke("get_download_state");
 }
 
 export async function listDownloadedModels(): Promise<[string, string][]> {

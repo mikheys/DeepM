@@ -1,3 +1,25 @@
+/* External model input row */
+.external-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.external-input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  outline: none;
+}
+.external-input:focus {
+  border-color: var(--color-border-focus);
+}
+
 .model-manager {
   display: flex;
   flex-direction: column;

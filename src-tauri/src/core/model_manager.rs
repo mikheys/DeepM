@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 use sha2::Digest;
 
@@ -48,10 +49,23 @@ impl ModelSpec {
     }
 }
 
+/// Live download progress, queryable so the UI can resume showing it after the
+/// model-manager tab is left and reopened (the download itself keeps running).
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadState {
+    pub size: String,
+    pub quantization: String,
+    pub progress: f64,
+    pub speed_mbps: f64,
+}
+
 pub struct ModelManager {
     pub status: Arc<Mutex<ModelStatus>>,
     pub current_spec: Arc<Mutex<Option<ModelSpec>>>,
     cancel_flag: Arc<Mutex<bool>>,
+    /// Set while a download is in progress (sync mutex so the progress callback
+    /// can update it). None when idle.
+    download_state: Arc<StdMutex<Option<DownloadState>>>,
 }
 
 impl ModelManager {
@@ -60,7 +74,26 @@ impl ModelManager {
             status: Arc::new(Mutex::new(ModelStatus::NotDownloaded)),
             current_spec: Arc::new(Mutex::new(None)),
             cancel_flag: Arc::new(Mutex::new(false)),
+            download_state: Arc::new(StdMutex::new(None)),
         }
+    }
+
+    /// Snapshot of the active download (if any).
+    pub fn get_download_state(&self) -> Option<DownloadState> {
+        self.download_state.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_download_state(&self, size: &str, quant: &str, progress: f64, speed_mbps: f64) {
+        *self.download_state.lock().unwrap_or_else(|e| e.into_inner()) = Some(DownloadState {
+            size: size.to_string(),
+            quantization: quant.to_string(),
+            progress,
+            speed_mbps,
+        });
+    }
+
+    pub fn clear_download_state(&self) {
+        *self.download_state.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     pub async fn get_status(&self) -> ModelStatus {

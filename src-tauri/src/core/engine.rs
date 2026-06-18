@@ -12,6 +12,101 @@ use super::languages::hy_mt_language_name;
 const LLAMA_SERVER_PORT: u16 = 28473;
 const SERVER_STARTUP_TIMEOUT_SECS: u64 = 60;
 
+// ── Windows job object ────────────────────────────────────────────────────────
+//
+// We put every llama-server child into a job object configured with
+// KILL_ON_JOB_CLOSE. The job handle is owned by the engine for the whole app
+// lifetime; when DeepM exits — even on a hard crash — the OS closes the handle,
+// the job closes, and every llama-server in it is terminated. This stops the
+// orphaned servers that otherwise pile up in memory across restarts.
+#[cfg(target_os = "windows")]
+mod job {
+    use core::ffi::c_void;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        pub fn CreateJobObjectW(attrs: *const c_void, name: *const u16) -> *mut c_void;
+        pub fn SetInformationJobObject(
+            job: *mut c_void,
+            class: i32,
+            info: *const c_void,
+            len: u32,
+        ) -> i32;
+        pub fn AssignProcessToJobObject(job: *mut c_void, process: *mut c_void) -> i32;
+    }
+
+    /// JobObjectExtendedLimitInformation
+    pub const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
+    pub const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
+
+    #[repr(C)]
+    #[derive(Default)]
+    pub struct JobBasicLimitInformation {
+        pub per_process_user_time_limit: i64,
+        pub per_job_user_time_limit: i64,
+        pub limit_flags: u32,
+        pub minimum_working_set_size: usize,
+        pub maximum_working_set_size: usize,
+        pub active_process_limit: u32,
+        pub affinity: usize,
+        pub priority_class: u32,
+        pub scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    pub struct IoCounters {
+        pub read_operation_count: u64,
+        pub write_operation_count: u64,
+        pub other_operation_count: u64,
+        pub read_transfer_count: u64,
+        pub write_transfer_count: u64,
+        pub other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    pub struct JobExtendedLimitInformation {
+        pub basic_limit_information: JobBasicLimitInformation,
+        pub io_info: IoCounters,
+        pub process_memory_limit: usize,
+        pub job_memory_limit: usize,
+        pub peak_process_memory_used: usize,
+        pub peak_job_memory_used: usize,
+    }
+
+    /// A job-object handle that is safe to move/share across threads.
+    pub struct JobHandle(pub *mut c_void);
+    unsafe impl Send for JobHandle {}
+    unsafe impl Sync for JobHandle {}
+
+    /// Creates a job object that kills its processes when the handle closes.
+    pub fn create_kill_on_close() -> Option<JobHandle> {
+        unsafe {
+            let h = CreateJobObjectW(core::ptr::null(), core::ptr::null());
+            if h.is_null() {
+                return None;
+            }
+            let mut info = JobExtendedLimitInformation::default();
+            info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(
+                h,
+                JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+                &info as *const _ as *const c_void,
+                core::mem::size_of::<JobExtendedLimitInformation>() as u32,
+            );
+            Some(JobHandle(h))
+        }
+    }
+
+    /// Adds a process handle to the job.
+    pub fn assign(job: &JobHandle, process: *mut c_void) {
+        unsafe {
+            AssignProcessToJobObject(job.0, process);
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ChatMessage {
     role: String,
@@ -75,6 +170,8 @@ pub struct TranslationEngine {
     client: reqwest::Client,
     model_path: Arc<Mutex<Option<PathBuf>>>,
     use_gpu: bool,
+    #[cfg(target_os = "windows")]
+    job: Option<job::JobHandle>,
 }
 
 impl TranslationEngine {
@@ -84,6 +181,8 @@ impl TranslationEngine {
             client: reqwest::Client::new(),
             model_path: Arc::new(Mutex::new(None)),
             use_gpu,
+            #[cfg(target_os = "windows")]
+            job: job::create_kill_on_close(),
         }
     }
 
@@ -115,12 +214,23 @@ impl TranslationEngine {
                 cmd.arg("--n-gpu-layers").arg("99");
             }
 
-            let mut child = cmd.spawn()
+            let child = cmd.spawn()
                 .map_err(|e| anyhow!(
                     "Failed to launch llama-server.exe: {e}.\n\
                     Make sure llama-server.exe AND all companion DLLs (cublas64_12.dll, \
                     cudart64_12.dll, ggml-cuda.dll, etc.) are in src-tauri\\binaries\\."
                 ))?;
+
+            // Put the server in the kill-on-close job so it dies with DeepM.
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::io::AsRawHandle;
+                if let Some(j) = self.job.as_ref() {
+                    job::assign(j, child.as_raw_handle() as *mut _);
+                }
+            }
+
+            let mut child = child;
 
             // Capture stderr on a sync thread (std::sync::Mutex — safe from async context too)
             let stderr_output: Arc<StdMutex<String>> = Arc::new(StdMutex::new(String::new()));

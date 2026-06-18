@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rdev::{listen, Event, EventType, Key, Button};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -10,12 +11,49 @@ const DRAG_THRESHOLD_PX: f64 = 8.0;
 const MULTI_CLICK_MS: u64 = 400;
 const MULTI_CLICK_RADIUS_PX: f64 = 6.0;
 
+/// Hook settings that can change at runtime (from the Settings panel) without
+/// restarting the global hook thread. Read live on every relevant event.
+pub struct SharedHookConfig {
+    translate_replace: Mutex<String>,
+    triple_copy_interval_ms: AtomicU64,
+    triple_copy_count: AtomicUsize,
+}
+
+impl SharedHookConfig {
+    pub fn new(translate_replace: String, interval_ms: u64, count: u32) -> Self {
+        Self {
+            translate_replace: Mutex::new(translate_replace),
+            triple_copy_interval_ms: AtomicU64::new(interval_ms),
+            triple_copy_count: AtomicUsize::new((count as usize).max(2)),
+        }
+    }
+
+    /// Applies new hotkey settings immediately.
+    pub fn update(&self, translate_replace: String, interval_ms: u64, count: u32) {
+        *self.translate_replace.lock().unwrap_or_else(|e| e.into_inner()) = translate_replace;
+        self.triple_copy_interval_ms.store(interval_ms, Ordering::Relaxed);
+        self.triple_copy_count
+            .store((count as usize).max(2), Ordering::Relaxed);
+    }
+
+    fn translate_replace(&self) -> String {
+        self.translate_replace
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default()
+    }
+    fn interval_ms(&self) -> u64 {
+        self.triple_copy_interval_ms.load(Ordering::Relaxed)
+    }
+    fn copy_count(&self) -> usize {
+        self.triple_copy_count.load(Ordering::Relaxed).max(2)
+    }
+}
+
 struct HookState {
+    config: Arc<SharedHookConfig>,
     held_keys: HashSet<Key>,
     c_press_times: Vec<Instant>,
-    interval_ms: u64,
-    /// How many quick Ctrl+C presses trigger the copy→open action (>= 2).
-    copy_count: usize,
     last_pos: (f64, f64),
     mouse_down_pos: Option<(f64, f64)>,
     /// Tracks consecutive quick clicks to detect double/triple-click word selection.
@@ -27,12 +65,11 @@ struct HookState {
 }
 
 impl HookState {
-    fn new(interval_ms: u64, copy_count: usize) -> Self {
+    fn new(config: Arc<SharedHookConfig>) -> Self {
         Self {
+            config,
             held_keys: HashSet::new(),
             c_press_times: Vec::new(),
-            interval_ms,
-            copy_count: copy_count.max(2),
             last_pos: (0.0, 0.0),
             mouse_down_pos: None,
             last_click_time: None,
@@ -72,10 +109,10 @@ impl HookState {
 
     fn record_c_press(&mut self) -> bool {
         let now = Instant::now();
-        let window = Duration::from_millis(self.interval_ms);
+        let window = Duration::from_millis(self.config.interval_ms());
         self.c_press_times.retain(|t| now.duration_since(*t) <= window);
         self.c_press_times.push(now);
-        if self.c_press_times.len() >= self.copy_count {
+        if self.c_press_times.len() >= self.config.copy_count() {
             self.c_press_times.clear();
             return true;
         }
@@ -136,24 +173,15 @@ fn key_from_name(name: &str) -> Option<Key> {
     })
 }
 
-pub fn spawn_hook(
-    app: AppHandle,
-    translate_replace_hotkey: String,
-    triple_copy_interval_ms: u64,
-    triple_copy_count: u32,
-) {
+pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
     std::thread::Builder::new()
         .name("deepm-hook".into())
         .spawn(move || {
-            let state = Arc::new(Mutex::new(HookState::new(
-                triple_copy_interval_ms,
-                triple_copy_count as usize,
-            )));
+            let state = Arc::new(Mutex::new(HookState::new(Arc::clone(&config))));
 
             let callback = {
                 let app = app.clone();
                 let state = Arc::clone(&state);
-                let tr_hotkey = translate_replace_hotkey.clone();
 
                 move |event: Event| {
                     let mut st = match state.lock() {
@@ -175,6 +203,7 @@ pub fn spawn_hook(
                             // tr_fired guard, key auto-repeat re-emits this every few
                             // milliseconds, causing the translation to be pasted
                             // multiple times.
+                            let tr_hotkey = st.config.translate_replace();
                             if st.is_translate_replace_combo(&tr_hotkey) {
                                 if !st.tr_fired {
                                     st.tr_fired = true;
@@ -205,8 +234,11 @@ pub fn spawn_hook(
                                 st.c_press_times.clear();
                             }
                             // Re-arm the translate-replace combo once its keys are released.
-                            if st.tr_fired && !st.is_translate_replace_combo(&tr_hotkey) {
-                                st.tr_fired = false;
+                            if st.tr_fired {
+                                let tr_hotkey = st.config.translate_replace();
+                                if !st.is_translate_replace_combo(&tr_hotkey) {
+                                    st.tr_fired = false;
+                                }
                             }
                         }
 

@@ -13,6 +13,6 @@ pub use floating::{
     create_floating_window, hide_floating, is_floating_visible, set_floating_expanded,
     show_floating,
 };
-pub use hotkeys::spawn_hook;
+pub use hotkeys::{spawn_hook, SharedHookConfig};
 pub use process::{foreground_is_excluded, list_app_processes};
 pub use tray::setup_tray;
