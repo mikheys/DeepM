@@ -370,6 +370,40 @@ async fn quick_translate(
     Ok(result.translated_text)
 }
 
+/// Copies the user's current selection (Ctrl+C) and translates it. Called when
+/// the floating button is clicked — i.e. only when the user actually commits to
+/// translating, so the selection-wiping copy never happens on mere selection.
+#[tauri::command]
+async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let text = tokio::task::spawn_blocking(os_integration::get_selected_text)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let text = match text {
+        Some(t) if !t.trim().is_empty() => t,
+        _ => return Err("Не удалось получить выделенный текст".into()),
+    };
+
+    let src = detect_language_internal(&text);
+    let tgt = if src == "ru" { "en".to_string() } else { "ru".to_string() };
+
+    let req = TranslationRequest {
+        source_text: text.clone(),
+        source_lang: src.clone(),
+        target_lang: tgt.clone(),
+        context: None,
+        glossary: vec![],
+        formatted: false,
+    };
+    let result = state.engine.translate(req).await.map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "translated_text": result.translated_text,
+        "source_lang": src,
+        "target_lang": tgt,
+    }))
+}
+
 /// Toggle whether the floating button feature is active.
 #[tauri::command]
 async fn set_floating_enabled(
@@ -772,30 +806,15 @@ pub fn run() {
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
 
-                        // Short delay so the OS can finalize the selection, then
-                        // use get_selected_text which verifies clipboard actually changed
-                        // (returns None when nothing was selected = tray double-click, empty field).
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-                        let text_opt = tokio::task::spawn_blocking(
-                            os_integration::get_selected_text
-                        ).await;
-
-                        let text = match text_opt {
-                            Ok(Some(t)) if !t.trim().is_empty() => t,
-                            _ => {
-                                // Nothing was actually selected — hide and bail
-                                os_integration::hide_floating(&h);
-                                return;
-                            }
-                        };
-
+                        // Just SHOW the button next to the cursor. We do NOT copy the
+                        // selection here — sending Ctrl+C would wipe the selection in
+                        // console/terminal apps. The selected text is copied only when
+                        // the user actually clicks the button (translate_selection).
                         if let Err(e) = os_integration::show_floating(&h, x, y) {
                             log::debug!("show_floating failed: {e}");
                             return;
                         }
-                        let _ = h.emit_to("floating", "floating_text",
-                            serde_json::json!({ "text": text }));
+                        let _ = h.emit_to("floating", "floating_show", ());
                     });
                 });
             }
@@ -825,6 +844,7 @@ pub fn run() {
             handle_triple_copy,
             translate_and_replace,
             quick_translate,
+            translate_selection,
             set_floating_enabled,
             check_and_show_floating,
             hide_floating_button,

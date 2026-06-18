@@ -129,9 +129,12 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
     // Always start collapsed (resets a possibly-expanded window from last time).
     let _ = win.set_size(PhysicalSize::new(COLLAPSED_W, COLLAPSED_H));
 
-    // Position the button just above/right of the cursor.
-    let px = (x + 8.0) as i32;
-    let py = (y - 56.0) as i32;
+    // Position the button BELOW-RIGHT of the cursor so it never overlaps the
+    // selected text (the drag usually ends at the bottom-right of the selection).
+    // The window has 12px transparent padding, so the visible button sits well
+    // clear of the cursor/selection.
+    let px = (x + 6.0) as i32;
+    let py = (y + 16.0) as i32;
     win.set_position(PhysicalPosition::new(px.max(0), py.max(0)))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
