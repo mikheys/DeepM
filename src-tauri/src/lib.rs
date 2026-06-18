@@ -382,17 +382,13 @@ async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::V
         .await
         .map_err(|e| e.to_string())?;
 
+    // Only translate what Ctrl+C actually copied. We must NOT fall back to the
+    // existing clipboard contents — doing so would "translate the last copied
+    // text" when nothing is selected (e.g. clicking the button after an empty
+    // double-click), which is exactly the confusing behaviour to avoid.
     let text = match text {
         Some(t) if !t.trim().is_empty() => t,
-        _ => {
-            // Fallback for apps that don't copy via Ctrl+C (MobaXterm, some
-            // terminals) but DO put the selection on the clipboard via
-            // "copy on select": just use whatever is on the clipboard.
-            os_integration::read_clipboard()
-                .ok()
-                .filter(|t| !t.trim().is_empty())
-                .ok_or("Не удалось получить выделенный текст")?
-        }
+        _ => return Err("Нет выделенного текста для перевода".into()),
     };
 
     let src = detect_language_internal(&text);
@@ -774,6 +770,9 @@ pub fn run() {
                     let has_selection = payload.as_ref()
                         .and_then(|v| v["has_selection"].as_bool())
                         .unwrap_or(false);
+                    let needs_verify = payload.as_ref()
+                        .and_then(|v| v["verify"].as_bool())
+                        .unwrap_or(false);
                     let click_x = payload.as_ref()
                         .and_then(|v| v["x"].as_f64())
                         .unwrap_or(0.0);
@@ -830,6 +829,24 @@ pub fn run() {
                         tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
                         if gen_arc.load(Ordering::SeqCst) != my_gen {
                             return;
+                        }
+
+                        // For an ambiguous multi-click (double/triple), confirm that text
+                        // was really selected before showing — otherwise double-clicking
+                        // empty space (e.g. the desktop) would pop the button up. A drag
+                        // is trusted directly and is NOT verified, so it never sends Ctrl+C
+                        // (keeps console/terminal selections intact).
+                        if needs_verify {
+                            let confirmed = tokio::task::spawn_blocking(
+                                os_integration::get_selected_text
+                            ).await;
+                            match confirmed {
+                                Ok(Some(t)) if !t.trim().is_empty() => {}
+                                _ => return, // nothing selected — don't show
+                            }
+                            if gen_arc.load(Ordering::SeqCst) != my_gen {
+                                return;
+                            }
                         }
 
                         // Just SHOW the button next to the cursor. We do NOT copy the

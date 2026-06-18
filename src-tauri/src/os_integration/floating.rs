@@ -38,12 +38,28 @@ mod win32 {
         ) -> i32;
     }
 
+    #[repr(C)]
+    pub struct POINT {
+        pub x: i32,
+        pub y: i32,
+    }
+
     #[link(name = "user32")]
     extern "system" {
         pub fn ShowWindow(hwnd: *mut c_void, n_cmd_show: i32) -> i32;
         pub fn IsWindowVisible(hwnd: *mut c_void) -> i32;
         pub fn GetWindowLongPtrW(hwnd: *mut c_void, n_index: i32) -> isize;
         pub fn SetWindowLongPtrW(hwnd: *mut c_void, n_index: i32, dw_new_long: isize) -> isize;
+        pub fn GetCursorPos(lp_point: *mut POINT) -> i32;
+        pub fn SetWindowPos(
+            hwnd: *mut c_void,
+            hwnd_insert_after: *mut c_void,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            u_flags: u32,
+        ) -> i32;
     }
 
     /// DWMWA_WINDOW_CORNER_PREFERENCE
@@ -54,6 +70,15 @@ mod win32 {
     pub const SW_HIDE: i32 = 0;
     /// SW_SHOWNA = 8 (show without activating)
     pub const SW_SHOWNA: i32 = 8;
+
+    /// HWND_TOPMOST = (HWND)-1
+    pub fn hwnd_topmost() -> *mut c_void {
+        -1isize as *mut c_void
+    }
+    /// SetWindowPos flags
+    pub const SWP_NOSIZE: u32 = 0x0001;
+    pub const SWP_NOACTIVATE: u32 = 0x0010;
+    pub const SWP_SHOWWINDOW: u32 = 0x0040;
 
     /// GWL_EXSTYLE
     pub const GWL_EXSTYLE: i32 = -20;
@@ -119,7 +144,14 @@ pub fn create_floating_window(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-/// Shows the floating button (collapsed) near screen coordinates (x, y).
+/// Shows the floating button (collapsed) near the mouse cursor.
+///
+/// `x`/`y` (from the input hook) are used as a fallback only. On Windows we
+/// position via raw GetCursorPos + SetWindowPos, which both operate in the same
+/// physical virtual-desktop coordinate space — this is what makes the button
+/// land on the CORRECT monitor in a multi-monitor setup. Going through Tauri's
+/// set_position re-interprets the coordinates against the window's current
+/// monitor DPI and lands it on the wrong screen.
 pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
     let win = match app.get_webview_window(FLOATING_WINDOW_LABEL) {
         Some(w) => w,
@@ -129,27 +161,41 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
     // Always start collapsed (resets a possibly-expanded window from last time).
     let _ = win.set_size(PhysicalSize::new(COLLAPSED_W, COLLAPSED_H));
 
-    // Position the button BELOW-RIGHT of the cursor so it never overlaps the
-    // selected text (the drag usually ends at the bottom-right of the selection).
-    // The window has 12px transparent padding, so the visible button sits well
-    // clear of the cursor/selection.
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = win.hwnd() {
+            unsafe {
+                // Real cursor position in physical virtual-desktop coordinates.
+                let mut pt = win32::POINT { x: 0, y: 0 };
+                let (cx, cy) = if win32::GetCursorPos(&mut pt) != 0 {
+                    (pt.x, pt.y)
+                } else {
+                    (x as i32, y as i32)
+                };
+                // Below-right of the cursor so it clears the selected text.
+                let px = cx + 6;
+                let py = cy + 16;
+                // Position + show topmost WITHOUT activating (keeps source focus).
+                win32::SetWindowPos(
+                    hwnd.0,
+                    win32::hwnd_topmost(),
+                    px,
+                    py,
+                    0,
+                    0,
+                    win32::SWP_NOSIZE | win32::SWP_NOACTIVATE | win32::SWP_SHOWWINDOW,
+                );
+            }
+            return Ok(());
+        }
+    }
+
+    // Non-Windows fallback.
     let px = (x + 6.0) as i32;
     let py = (y + 16.0) as i32;
     win.set_position(PhysicalPosition::new(px.max(0), py.max(0)))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    // Show WITHOUT activating, so the source app keeps focus and its selection.
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(hwnd) = win.hwnd() {
-            unsafe { win32::ShowWindow(hwnd.0, win32::SW_SHOWNA); }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        win.show().map_err(|e| anyhow::anyhow!("{e}"))?;
-    }
-
+    win.show().map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(())
 }
 

@@ -228,13 +228,17 @@ pub fn spawn_hook(
                             }
 
                             // A selection is either a drag OR a double/triple-click (word /
-                            // line select). This is safe now: showing the button no longer
-                            // copies anything — the Ctrl+C happens only on button click.
+                            // line select). A drag is a reliable signal, so we show the
+                            // button straight away. A multi-click is ambiguous (double-
+                            // clicking the desktop selects nothing), so it carries
+                            // verify=true and the backend confirms a real selection exists
+                            // before showing the button.
                             let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
                             let has_selection = had_drag || is_multi_click;
 
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
                                 "has_selection": has_selection,
+                                "verify": is_multi_click,
                                 "x": cx,
                                 "y": cy,
                             }));
