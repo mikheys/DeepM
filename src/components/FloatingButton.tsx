@@ -143,7 +143,7 @@ export default function FloatingButton() {
         <div className="fb-btn">
           {uiState === "loading"
             ? <span className="fb-spinner" />
-            : <Languages size={22} strokeWidth={1.8} />}
+            : <Languages size={18} strokeWidth={1.8} />}
         </div>
       </div>
 

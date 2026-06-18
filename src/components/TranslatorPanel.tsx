@@ -153,6 +153,9 @@ export default function TranslatorPanel({
     setCharCount(0); setDetectedLang(null); setPrevContext(null);
   };
 
+  // Double-click the divider to snap it back to the centre (50/50).
+  const resetSplit = () => setSplitRatio(50);
+
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault();
     isDragging.current = true;
@@ -253,7 +256,8 @@ export default function TranslatorPanel({
               autoFocus
             />
           </div>
-          <div className="divider divider-h" onMouseDown={startDrag} />
+          <div className="divider divider-h" onMouseDown={startDrag}
+            onDoubleClick={resetSplit} title={t.divider_reset_hint} />
           <div className="pane-body pane-body-target">
             <div className="output-area">
               {isTranslating ? (
@@ -271,13 +275,15 @@ export default function TranslatorPanel({
         <div className="panel-footer">
           {/* Source footer */}
           <div className="panel-footer-section panel-footer-source">
-            <select className="mode-select" value={mode}
-              onChange={(e) => setMode(e.target.value as TranslationMode)}
-              title={t.mode_hint}>
-              {MODE_OPTIONS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+            <div className="mode-control" title={t.mode_hint}>
+              <span className="mode-label">{t.mode_label}:</span>
+              <select className="mode-select" value={mode}
+                onChange={(e) => setMode(e.target.value as TranslationMode)}>
+                {MODE_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
             <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
           </div>
 
@@ -336,18 +342,21 @@ export default function TranslatorPanel({
           autoFocus
         />
         <div className="pane-footer">
-          <select className="mode-select" value={mode}
-            onChange={(e) => setMode(e.target.value as TranslationMode)}
-            title={t.mode_hint}>
-            {MODE_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
+          <div className="mode-control" title={t.mode_hint}>
+            <span className="mode-label">{t.mode_label}:</span>
+            <select className="mode-select" value={mode}
+              onChange={(e) => setMode(e.target.value as TranslationMode)}>
+              {MODE_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
           <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
         </div>
       </div>
 
-      <div className="divider divider-v" onMouseDown={startDrag} />
+      <div className="divider divider-v" onMouseDown={startDrag}
+        onDoubleClick={resetSplit} title={t.divider_reset_hint} />
 
       <div className="pane-v pane-v-target">
         <div className="pane-toolbar">

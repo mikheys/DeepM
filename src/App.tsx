@@ -54,7 +54,7 @@ function MainApp() {
   const [glossary, setGlossary] = useState<{ source: string; target: string; lang_pair: string }[]>([]);
   const [injectedText, setInjectedText] = useState<string | undefined>(undefined);
   const [translateReplaceActive, setTranslateReplaceActive] = useState(false);
-  const [defaultTargetLang, setDefaultTargetLang] = useState("en");
+  const [defaultTargetLang, setDefaultTargetLang] = useState("auto");
   const [defaultSourceLang, setDefaultSourceLang] = useState("auto");
 
   // Sidebar: compact by default, persisted in localStorage

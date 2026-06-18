@@ -58,7 +58,7 @@ impl Default for AppSettings {
         let model_path = default_model_path();
         Self {
             default_source_lang: "auto".to_string(),
-            default_target_lang: "en".to_string(),
+            default_target_lang: "auto".to_string(),
             use_gpu: true,
             model_size: "1.8B".to_string(),
             quantization: "Q4_K_M".to_string(),
@@ -70,10 +70,12 @@ impl Default for AppSettings {
             start_in_tray: false,
             triple_copy_interval_ms: 500,
             locale: "en".to_string(),
-            schema_version: 1,
+            schema_version: CURRENT_SCHEMA,
         }
     }
 }
+
+const CURRENT_SCHEMA: u32 = 2;
 
 pub fn default_model_path() -> String {
     dirs::data_local_dir()
@@ -113,6 +115,10 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
 }
 
 fn migrate(settings: &mut AppSettings) {
-    // Future schema migrations go here.
-    settings.schema_version = 1;
+    // v2: the default target language became "auto" (was hardcoded "en").
+    // Flip the old default for users who never changed it.
+    if settings.schema_version < 2 && settings.default_target_lang == "en" {
+        settings.default_target_lang = "auto".to_string();
+    }
+    settings.schema_version = CURRENT_SCHEMA;
 }

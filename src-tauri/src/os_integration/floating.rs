@@ -9,8 +9,8 @@ const FLOATING_WINDOW_LABEL: &str = "floating";
 //
 // Collapsed = just the round button (+ shadow margin).
 // Expanded  = button row + translation card below it.
-const COLLAPSED_W: u32 = 80;
-const COLLAPSED_H: u32 = 80;
+const COLLAPSED_W: u32 = 66;
+const COLLAPSED_H: u32 = 66;
 const EXPANDED_W: u32 = 320;
 const EXPANDED_H: u32 = 300;
 
@@ -41,6 +41,7 @@ mod win32 {
     #[link(name = "user32")]
     extern "system" {
         pub fn ShowWindow(hwnd: *mut c_void, n_cmd_show: i32) -> i32;
+        pub fn IsWindowVisible(hwnd: *mut c_void) -> i32;
         pub fn GetWindowLongPtrW(hwnd: *mut c_void, n_index: i32) -> isize;
         pub fn SetWindowLongPtrW(hwnd: *mut c_void, n_index: i32, dw_new_long: isize) -> isize;
     }
@@ -49,6 +50,8 @@ mod win32 {
     pub const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
     /// DWMWCP_DONOTROUND (disable automatic Windows 11 corner rounding)
     pub const DWMWCP_DONOTROUND: i32 = 1;
+    /// SW_HIDE = 0
+    pub const SW_HIDE: i32 = 0;
     /// SW_SHOWNA = 8 (show without activating)
     pub const SW_SHOWNA: i32 = 8;
 
@@ -128,7 +131,7 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
 
     // Position the button just above/right of the cursor.
     let px = (x + 8.0) as i32;
-    let py = (y - 64.0) as i32;
+    let py = (y - 56.0) as i32;
     win.set_position(PhysicalPosition::new(px.max(0), py.max(0)))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -165,15 +168,36 @@ pub fn set_floating_expanded(app: &AppHandle, expanded: bool) -> Result<()> {
 }
 
 /// Hides the floating button window.
+///
+/// On Windows we hide via the raw ShowWindow(SW_HIDE) to mirror the raw
+/// SW_SHOWNA used to show it. Tauri's own win.hide() consults its cached
+/// visibility flag, which is NOT updated by our raw show — so win.hide()
+/// would no-op and the window would never disappear.
 pub fn hide_floating(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(hwnd) = win.hwnd() {
+                unsafe { win32::ShowWindow(hwnd.0, win32::SW_HIDE); }
+                return;
+            }
+        }
         let _ = win.hide();
     }
 }
 
 /// Returns true if the floating window is currently visible.
+/// Uses the raw IsWindowVisible on Windows to stay consistent with the raw
+/// show/hide path (Tauri's cached is_visible() can be out of sync).
 pub fn is_floating_visible(app: &AppHandle) -> bool {
-    app.get_webview_window(FLOATING_WINDOW_LABEL)
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false)
+    if let Some(win) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(hwnd) = win.hwnd() {
+                return unsafe { win32::IsWindowVisible(hwnd.0) != 0 };
+            }
+        }
+        return win.is_visible().unwrap_or(false);
+    }
+    false
 }

@@ -75,10 +75,14 @@ export type Strings = {
   translating_in_place: string;
 
   // Translation modes
+  mode_label: string;
   mode_standard: string;
   mode_contextual: string;
   mode_formatted: string;
   mode_hint: string;
+
+  // Divider
+  divider_reset_hint: string;
 };
 
 const en: Strings = {
@@ -149,10 +153,12 @@ const en: Strings = {
 
   translating_in_place: "Translating in place…",
 
+  mode_label: "Mode",
   mode_standard: "Standard",
   mode_contextual: "Contextual",
   mode_formatted: "Formatted",
-  mode_hint: "Standard: direct translation · Contextual: uses previous text as context · Formatted: preserves markup tags",
+  mode_hint: "Translation mode — Standard: plain direct translation · Contextual: feeds the previous text as context for consistent multi-part translations · Formatted: keeps markup/markdown tags intact",
+  divider_reset_hint: "Drag to resize · double-click to centre",
 };
 
 const ru: Strings = {
@@ -223,10 +229,12 @@ const ru: Strings = {
 
   translating_in_place: "Перевод на месте…",
 
+  mode_label: "Режим",
   mode_standard: "Стандарт",
   mode_contextual: "С контекстом",
   mode_formatted: "С разметкой",
-  mode_hint: "Стандарт: прямой перевод · С контекстом: использует предыдущий текст · С разметкой: сохраняет теги",
+  mode_hint: "Режим перевода — Стандарт: обычный прямой перевод · С контекстом: передаёт предыдущий текст как контекст для связного перевода частями · С разметкой: сохраняет теги разметки/markdown",
+  divider_reset_hint: "Потяните для изменения · двойной клик — по центру",
 };
 
 const TRANSLATIONS: Record<Locale, Strings> = { en, ru };

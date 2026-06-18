@@ -742,7 +742,7 @@ pub fn run() {
                             // we must not hide. The window is now sized tightly to its content,
                             // so this rect closely matches the visible button/card.
                             let on_floating = h.get_webview_window("floating").map_or(false, |fw| {
-                                let visible = fw.is_visible().unwrap_or(false);
+                                let visible = os_integration::is_floating_visible(&h);
                                 if !visible { return false; }
                                 match (fw.outer_position(), fw.outer_size()) {
                                     (Ok(pos), Ok(sz)) => {
