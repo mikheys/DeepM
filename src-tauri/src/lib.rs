@@ -500,18 +500,24 @@ async fn restart_engine(
         }
     };
 
-    match state.engine.start(path).await {
-        Ok(()) => {
-            let _ = app.emit("model_ready", ());
-            os_integration::tray::update_tray_model_status(&app, "model ready");
-            Ok(())
+    // Spawn in background so the command returns immediately.
+    // The frontend gets model_ready / model_error events when the engine is up.
+    let engine = Arc::clone(&state.engine);
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        match engine.start(path).await {
+            Ok(()) => {
+                let _ = app_clone.emit("model_ready", ());
+                os_integration::tray::update_tray_model_status(&app_clone, "model ready");
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let _ = app_clone.emit("model_error", &msg);
+            }
         }
-        Err(e) => {
-            let msg = e.to_string();
-            let _ = app.emit("model_error", &msg);
-            Err(msg)
-        }
-    }
+    });
+
+    Ok(())
 }
 
 // ── Autostart Command ────────────────────────────────────────────────────────
@@ -725,23 +731,26 @@ pub fn run() {
                     let h = h.clone();
                     tauri::async_runtime::spawn(async move {
                         if !has_selection {
-                            // Check if the click landed inside the floating window.
-                            // If yes, the user is interacting with the button — don't hide.
-                            let on_floating = h.get_webview_window("floating").map_or(false, |fw| {
+                            // Check if the click landed inside the floating button (52×52 at
+                            // window top-left).  If so, the user is clicking the button itself
+                            // — React handles it; we must not hide from Rust.
+                            let on_button = h.get_webview_window("floating").map_or(false, |fw| {
                                 let visible = fw.is_visible().unwrap_or(false);
                                 if !visible { return false; }
-                                match (fw.outer_position(), fw.outer_size()) {
-                                    (Ok(pos), Ok(sz)) => {
+                                match fw.outer_position() {
+                                    Ok(pos) => {
                                         let fx = pos.x as f64;
                                         let fy = pos.y as f64;
-                                        click_x >= fx && click_x <= fx + sz.width as f64
-                                            && click_y >= fy && click_y <= fy + sz.height as f64
+                                        // Only protect the 60×60 button hitbox, not the whole
+                                        // 300×218 window (rest is transparent / pointer-events:none).
+                                        click_x >= fx && click_x <= fx + 60.0
+                                            && click_y >= fy && click_y <= fy + 60.0
                                     }
                                     _ => false,
                                 }
                             });
 
-                            if !on_floating {
+                            if !on_button {
                                 os_integration::hide_floating(&h);
                             }
                             return;
@@ -758,16 +767,19 @@ pub fn run() {
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
 
-                        // Wait ~1 s: let the user finish their selection before Ctrl+C
-                        tokio::time::sleep(tokio::time::Duration::from_millis(950)).await;
+                        // Short delay so the OS can finalize the selection, then
+                        // use get_selected_text which verifies clipboard actually changed
+                        // (returns None when nothing was selected = tray double-click, empty field).
+                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-                        let copy_result = tokio::task::spawn_blocking(
-                            os_integration::copy_selection_to_clipboard
+                        let text_opt = tokio::task::spawn_blocking(
+                            os_integration::get_selected_text
                         ).await;
 
-                        let text = match copy_result {
-                            Ok(Ok(t)) if !t.trim().is_empty() => t,
+                        let text = match text_opt {
+                            Ok(Some(t)) if !t.trim().is_empty() => t,
                             _ => {
+                                // Nothing was actually selected — hide and bail
                                 os_integration::hide_floating(&h);
                                 return;
                             }

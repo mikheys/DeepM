@@ -7,7 +7,7 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 const DRAG_THRESHOLD_PX: f64 = 8.0;
-const MULTI_CLICK_MS: u64 = 450;
+const MULTI_CLICK_MS: u64 = 350;
 const MULTI_CLICK_RADIUS_PX: f64 = 5.0;
 
 struct HookState {
@@ -160,6 +160,12 @@ pub fn spawn_hook(
                                 let dist = ((cx - dx).powi(2) + (cy - dy).powi(2)).sqrt();
                                 dist >= DRAG_THRESHOLD_PX
                             });
+
+                            // After a drag, reset multi-click tracking so that the next
+                            // single click after a drag isn't falsely counted as a double-click.
+                            if had_drag {
+                                st.last_click_time = None;
+                            }
 
                             // Detect double/triple click (word/line selection without dragging)
                             let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);

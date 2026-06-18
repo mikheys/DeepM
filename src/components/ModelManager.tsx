@@ -73,11 +73,13 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     const unsubReady = onModelReady(() => {
       setStatus({ type: "ready", path: "" });
       setEngineError(null);
+      setEngineRetrying(false);
       setDownloadingKey(null);
       refreshDownloaded();
       onReady();
     });
     const unsubError = onModelError((msg) => {
+      setEngineRetrying(false);
       if (msg.includes("llama-server") || msg.includes("crashed") || msg.includes("start")) {
         setEngineError(msg);
       } else {
@@ -130,16 +132,15 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     }
   };
 
-  const handleRetryEngine = async () => {
+  const handleRetryEngine = () => {
     setEngineRetrying(true);
     setEngineError(null);
-    try {
-      await restartEngine();
-    } catch (e) {
+    // Fire-and-forget: restart_engine now spawns in background and returns immediately.
+    // model_ready / model_error events (listened above) will clear engineRetrying.
+    restartEngine().catch((e) => {
       setEngineError(String(e));
-    } finally {
       setEngineRetrying(false);
-    }
+    });
   };
 
   const isReady = status.type === "ready";

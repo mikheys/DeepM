@@ -6,7 +6,9 @@
   padding: 0;
 }
 
-/* Root: fills the whole 300×218 Tauri window, transparent background */
+/* Root: fills the whole 300×218 Tauri window.
+ * pointer-events:none on root means transparent areas pass clicks through to the
+ * underlying OS window — only the button and card capture events. */
 .fb-root {
   width: 100%;
   height: 100%;
@@ -14,60 +16,55 @@
   flex-direction: column;
   font-family: var(--font-sans, system-ui, sans-serif);
   background: transparent;
-  /* Prevent the root from catching clicks in the transparent area */
   pointer-events: none;
 }
 
-/* ── Button wrapper — 52×52, provides clean rounded clip ────────────── */
-/*
- * overflow: hidden + border-radius clips the button's background exactly to
- * the rounded rect, eliminating the gray semi-transparent anti-aliased corner
- * pixels that WebView2 would otherwise render.
- * filter: drop-shadow() is placed here so the shadow renders OUTSIDE the
- * clipping boundary (drop-shadow follows the painted shape).
- */
+/* ── Circle button wrapper ───────────────────────────────────────────────── */
+/* No overflow:hidden here — the circle button clips itself via border-radius:50%.
+ * Hover scale is on the wrapper so it doesn't need to be clipped by a parent. */
 .fb-btn-wrap {
   width: 52px;
   height: 52px;
-  border-radius: 14px;
-  overflow: hidden;
-  cursor: pointer;
+  flex-shrink: 0;
   pointer-events: all;
-  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.38))
-          drop-shadow(0 1px 3px rgba(0, 0, 0, 0.22));
-  transition: filter 120ms ease, transform 80ms ease;
+  cursor: pointer;
+  transition: transform 80ms ease;
 }
 
-.fb-btn-wrap:hover {
-  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.45))
-          drop-shadow(0 2px 5px rgba(0, 0, 0, 0.28));
-  transform: scale(1.06);
+.fb-btn-wrap:hover  { transform: scale(1.08); }
+.fb-btn-wrap:active { transform: scale(0.94); }
+
+.fb-btn-wrap-loading {
+  cursor: default;
 }
 
-.fb-btn-wrap:active {
-  transform: scale(0.97);
-}
-
-/* ── Square button — fills wrapper, no border-radius (wrapper clips it) */
+/* Circle button */
 .fb-btn {
   width: 52px;
   height: 52px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-bg, #1a1a1e);
-  border: 1px solid var(--color-border, #3a3a40);
+  border: 1.5px solid var(--color-border, #3a3a40);
   color: var(--color-accent, #7b7fe8);
   cursor: pointer;
-  /* No border-radius — the wrapper clips to the rounded rect */
-  transition: background 120ms ease;
+  /* box-shadow renders outside the element — works correctly on circles */
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.45),
+    0 1px 4px  rgba(0, 0, 0, 0.30);
+  transition: background 120ms ease, box-shadow 120ms ease;
+  user-select: none;
 }
 
-.fb-btn-loading {
-  cursor: default;
+.fb-btn-wrap:hover .fb-btn {
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.52),
+    0 2px 6px  rgba(0, 0, 0, 0.35);
 }
 
-/* ── Spinner ────────────────────────────────────────────────────────── */
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
 .fb-spinner {
   display: inline-block;
   width: 20px;
@@ -82,15 +79,16 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── Card wrapper — hidden when compact, visible when expanded ──────── */
+/* ── Translation card wrapper ────────────────────────────────────────────── */
 .fb-card-wrap {
   width: 300px;
-  height: 160px;
   margin-top: 6px;
+  height: 160px;
+  flex-shrink: 0;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-4px) scale(0.97);
-  transition: opacity 140ms ease, transform 140ms ease;
+  transform: translateY(-6px) scale(0.97);
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .fb-card-visible {
@@ -99,7 +97,7 @@
   transform: translateY(0) scale(1);
 }
 
-/* ── Popup card ─────────────────────────────────────────────────────── */
+/* ── Card ────────────────────────────────────────────────────────────────── */
 .fb-card {
   width: 100%;
   height: 100%;
@@ -108,27 +106,29 @@
   background: var(--color-bg, #1a1a1e);
   border: 1px solid var(--color-border, #3a3a40);
   border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.50),
+    0 2px 8px  rgba(0, 0, 0, 0.30);
   overflow: hidden;
 }
 
 .fb-card-error {
-  border-color: rgba(239, 68, 68, 0.4);
+  border-color: rgba(239, 68, 68, 0.45);
 }
 
 .fb-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--color-border, #3a3a40);
   flex-shrink: 0;
 }
 
 .fb-lang-badge {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   color: var(--color-text-muted, #606068);
   text-transform: uppercase;
 }
@@ -139,7 +139,7 @@
   gap: 2px;
 }
 
-.fb-icon-action {
+.fb-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -150,15 +150,15 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background 120ms, color 120ms;
+  transition: background 100ms, color 100ms;
 }
 
-.fb-icon-action:hover {
+.fb-icon-btn:hover {
   background: var(--color-bg-tertiary, #2e2e33);
   color: var(--color-text-primary, #f0f0f2);
 }
 
-.fb-icon-action.fb-close:hover {
+.fb-close-btn:hover {
   background: rgba(239, 68, 68, 0.12);
   color: #f87171;
 }
