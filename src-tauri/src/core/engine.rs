@@ -403,18 +403,21 @@ fn llama_server_binary_path() -> Result<PathBuf> {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
 
-    // CARGO_MANIFEST_DIR is set during `cargo tauri dev` — use project binaries folder
-    let project_binaries = option_env!("CARGO_MANIFEST_DIR")
-        .map(|d| PathBuf::from(d).join("binaries").join("llama-server.exe"));
-
+    // In a packaged build the engine ships next to the exe under `engine/`
+    // (bundled as a Tauri resource). In dev, CARGO_MANIFEST_DIR is set — prefer
+    // the full GPU `binaries/` folder, falling back to the CPU `engine/` subset.
     let mut candidates: Vec<PathBuf> = vec![
+        exe_dir.join("engine").join("llama-server.exe"),
+        exe_dir.join("resources").join("engine").join("llama-server.exe"),
         exe_dir.join("llama-server.exe"),
         exe_dir.join("resources").join("llama-server.exe"),
         PathBuf::from("llama-server.exe"),
     ];
 
-    if let Some(p) = project_binaries {
-        candidates.insert(0, p);
+    if let Some(dir) = option_env!("CARGO_MANIFEST_DIR") {
+        // Dev: try GPU binaries first, then the staged CPU engine folder.
+        candidates.insert(0, PathBuf::from(dir).join("engine").join("llama-server.exe"));
+        candidates.insert(0, PathBuf::from(dir).join("binaries").join("llama-server.exe"));
     }
 
     for candidate in &candidates {

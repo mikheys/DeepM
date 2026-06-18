@@ -10,6 +10,10 @@ src-tauri/.cargo/
 # ── llama.cpp binaries ────────────────────────────────────
 # Download separately from github.com/ggerganov/llama.cpp/releases
 src-tauri/binaries/
+# CPU engine subset staged for bundling (generated from binaries/)
+src-tauri/engine/
+# CUDA add-on pack staged for release
+src-tauri/cuda-pack/
 
 # ── Downloaded archives & partial downloads ───────────────
 *.zip
@@ -36,3 +40,6 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Build log
+build.log
