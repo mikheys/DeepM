@@ -94,3 +94,7 @@ export async function listDownloadedModels(): Promise<[string, string][]> {
 export async function deleteModel(size: string, quantization: string): Promise<void> {
   return invoke("delete_model", { size, quantization });
 }
+
+export async function listAppProcesses(): Promise<string[]> {
+  return invoke("list_app_processes");
+}

@@ -42,6 +42,10 @@ pub struct AppSettings {
     /// How many quick Ctrl+C presses trigger the "copy → open DeepM" action (2 or 3).
     #[serde(default = "default_triple_copy_count")]
     pub triple_copy_count: u32,
+    /// Executable names (e.g. "mobaxterm.exe") where the floating button and
+    /// global hotkeys are suppressed.
+    #[serde(default)]
+    pub floating_exclusions: Vec<String>,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -77,6 +81,7 @@ impl Default for AppSettings {
             start_in_tray: false,
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
+            floating_exclusions: Vec::new(),
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

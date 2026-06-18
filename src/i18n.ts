@@ -68,6 +68,21 @@ export type Strings = {
   settings_copy_taps_hint: string;
   taps_double: string;
   taps_triple: string;
+  settings_exclusions: string;
+  settings_exclusions_btn: string;
+  settings_exclusions_hint: string;
+  exclusions_title: string;
+  exclusions_desc: string;
+  exclusions_current: string;
+  exclusions_empty: string;
+  exclusions_manual: string;
+  exclusions_add: string;
+  exclusions_running: string;
+  exclusions_refresh: string;
+  exclusions_none_running: string;
+  exclusions_done: string;
+  exclusions_close: string;
+  exclusions_remove: string;
   settings_interface: string;
   settings_floating: string;
   settings_floating_hint: string;
@@ -154,6 +169,21 @@ const en: Strings = {
   settings_copy_taps_hint: "How many fast Ctrl+C presses open DeepM with the copied text",
   taps_double: "Double (Ctrl+C ×2)",
   taps_triple: "Triple (Ctrl+C ×3)",
+  settings_exclusions: "Excluded apps",
+  settings_exclusions_btn: "Manage exclusions",
+  settings_exclusions_hint: "Apps where the button and hotkeys are disabled",
+  exclusions_title: "Excluded applications",
+  exclusions_desc: "In these apps the floating button won't appear and DeepM's global hotkeys are ignored. Useful for terminals (e.g. MobaXterm) or games.",
+  exclusions_current: "Excluded",
+  exclusions_empty: "No apps excluded yet",
+  exclusions_manual: "Add manually",
+  exclusions_add: "Add",
+  exclusions_running: "Running apps",
+  exclusions_refresh: "Refresh",
+  exclusions_none_running: "No other apps detected",
+  exclusions_done: "Done",
+  exclusions_close: "Close",
+  exclusions_remove: "Remove",
   settings_interface: "Interface",
   settings_floating: "Show floating button",
   settings_floating_hint: "Appears when text is selected",
@@ -236,6 +266,21 @@ const ru: Strings = {
   settings_copy_taps_hint: "Сколько быстрых Ctrl+C открывают DeepM со скопированным текстом",
   taps_double: "Двойное (Ctrl+C ×2)",
   taps_triple: "Тройное (Ctrl+C ×3)",
+  settings_exclusions: "Исключения",
+  settings_exclusions_btn: "Управление исключениями",
+  settings_exclusions_hint: "Приложения, где кнопка и горячие клавиши отключены",
+  exclusions_title: "Исключённые приложения",
+  exclusions_desc: "В этих приложениях плавающая кнопка не появляется, а глобальные горячие клавиши DeepM не срабатывают. Полезно для терминалов (например, MobaXterm) или игр.",
+  exclusions_current: "Исключено",
+  exclusions_empty: "Пока нет исключённых приложений",
+  exclusions_manual: "Добавить вручную",
+  exclusions_add: "Добавить",
+  exclusions_running: "Запущенные приложения",
+  exclusions_refresh: "Обновить",
+  exclusions_none_running: "Другие приложения не найдены",
+  exclusions_done: "Готово",
+  exclusions_close: "Закрыть",
+  exclusions_remove: "Удалить",
   settings_interface: "Интерфейс",
   settings_floating: "Плавающая кнопка",
   settings_floating_hint: "Появляется при выделении текста",

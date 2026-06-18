@@ -1,6 +1,7 @@
 pub mod clipboard_util;
 pub mod floating;
 pub mod hotkeys;
+pub mod process;
 pub mod tray;
 
 // Re-export the high-level interfaces so lib.rs only imports from here.
@@ -13,4 +14,5 @@ pub use floating::{
     show_floating,
 };
 pub use hotkeys::spawn_hook;
+pub use process::{foreground_is_excluded, list_app_processes};
 pub use tray::setup_tray;

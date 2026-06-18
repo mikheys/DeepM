@@ -5,6 +5,7 @@ import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import { getSettings, saveSettings } from "../api";
 import { useI18n } from "../i18n-context";
 import HotkeyCapture from "./HotkeyCapture";
+import ExclusionsModal from "./ExclusionsModal";
 import "./SettingsPanel.css";
 
 type Props = {
@@ -20,6 +21,7 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
   const [newGlossarySource, setNewGlossarySource] = useState("");
   const [newGlossaryTarget, setNewGlossaryTarget] = useState("");
   const [newGlossaryPair, setNewGlossaryPair] = useState("en->zh");
+  const [showExclusions, setShowExclusions] = useState(false);
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
@@ -207,6 +209,16 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             <span className="settings-hint">{t.settings_floating_hint}</span>
           </div>
           <div className="settings-row">
+            <label>{t.settings_exclusions}</label>
+            <button className="btn-secondary" onClick={() => setShowExclusions(true)}>
+              {t.settings_exclusions_btn}
+              {settings.floating_exclusions.length > 0
+                ? ` (${settings.floating_exclusions.length})`
+                : ""}
+            </button>
+            <span className="settings-hint">{t.settings_exclusions_hint}</span>
+          </div>
+          <div className="settings-row">
             <label>{t.settings_autostart}</label>
             <input
               type="checkbox"
@@ -241,6 +253,14 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
           {t.settings_save}
         </button>
       </div>
+
+      {showExclusions && (
+        <ExclusionsModal
+          value={settings.floating_exclusions}
+          onChange={(next) => update("floating_exclusions", next)}
+          onClose={() => setShowExclusions(false)}
+        />
+      )}
     </div>
   );
 }

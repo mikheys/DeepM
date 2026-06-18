@@ -105,6 +105,7 @@ export type AppSettings = {
   start_in_tray: boolean;
   triple_copy_interval_ms: number;
   triple_copy_count: number;
+  floating_exclusions: string[];
   locale: string;
 };
 

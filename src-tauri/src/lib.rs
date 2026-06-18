@@ -280,6 +280,14 @@ async fn translate_and_replace(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Respect the per-app exclusion list — do nothing in excluded apps.
+    {
+        let exclusions = state.settings.lock().await.floating_exclusions.clone();
+        if os_integration::foreground_is_excluded(&exclusions) {
+            return Ok(());
+        }
+    }
+
     // Notify UI that operation started (visual feedback)
     let _ = app.emit("translate_replace_started", ());
 
@@ -470,6 +478,14 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn set_floating_expanded(expanded: bool, app: AppHandle) -> Result<(), String> {
     os_integration::set_floating_expanded(&app, expanded).map_err(|e| e.to_string())
+}
+
+/// Lists executable names of apps with a visible window, for the exclusion picker.
+#[tauri::command]
+async fn list_app_processes() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(os_integration::list_app_processes)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Model file management commands ───────────────────────────────────────────
@@ -735,6 +751,11 @@ pub fn run() {
                 handle.listen("hotkey_triple_copy", move |_| {
                     let h = h.clone();
                     tauri::async_runtime::spawn(async move {
+                        // Respect the per-app exclusion list.
+                        let exclusions = h.state::<AppState>().settings.lock().await
+                            .floating_exclusions.clone();
+                        if os_integration::foreground_is_excluded(&exclusions) { return; }
+
                         // Slight delay to let the last Ctrl+C settle
                         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                         let text = os_integration::read_clipboard().unwrap_or_default();
@@ -820,6 +841,11 @@ pub fn run() {
                         let enabled = *h.state::<AppState>().floating_enabled.lock().await;
                         if !enabled { return; }
 
+                        // Skip apps the user excluded (e.g. terminals where copy works oddly).
+                        let exclusions = h.state::<AppState>().settings.lock().await
+                            .floating_exclusions.clone();
+                        if os_integration::foreground_is_excluded(&exclusions) { return; }
+
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -892,6 +918,7 @@ pub fn run() {
             check_and_show_floating,
             hide_floating_button,
             set_floating_expanded,
+            list_app_processes,
             set_autostart,
             get_autostart,
             restart_engine,

@@ -44,6 +44,23 @@ mod win32 {
         pub y: i32,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct RECT {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
+    }
+
+    #[repr(C)]
+    pub struct MONITORINFO {
+        pub cb_size: u32,
+        pub rc_monitor: RECT,
+        pub rc_work: RECT,
+        pub dw_flags: u32,
+    }
+
     #[link(name = "user32")]
     extern "system" {
         pub fn ShowWindow(hwnd: *mut c_void, n_cmd_show: i32) -> i32;
@@ -60,6 +77,46 @@ mod win32 {
             cy: i32,
             u_flags: u32,
         ) -> i32;
+        pub fn GetWindowRect(hwnd: *mut c_void, lp_rect: *mut RECT) -> i32;
+        pub fn MonitorFromPoint(pt: POINT, flags: u32) -> *mut c_void;
+        pub fn MonitorFromWindow(hwnd: *mut c_void, flags: u32) -> *mut c_void;
+        pub fn GetMonitorInfoW(hmonitor: *mut c_void, lpmi: *mut MONITORINFO) -> i32;
+    }
+
+    pub const MONITOR_DEFAULTTONEAREST: u32 = 2;
+
+    /// Returns the work area (excludes the taskbar) of the monitor that contains
+    /// the given monitor handle.
+    pub unsafe fn work_area(hmonitor: *mut c_void) -> Option<RECT> {
+        if hmonitor.is_null() {
+            return None;
+        }
+        let mut mi: MONITORINFO = core::mem::zeroed();
+        mi.cb_size = core::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(hmonitor, &mut mi) != 0 {
+            Some(mi.rc_work)
+        } else {
+            None
+        }
+    }
+
+    /// Clamps a window rect (x, y, w, h) so it stays fully inside `area`.
+    pub fn clamp_to(x: i32, y: i32, w: i32, h: i32, area: &RECT) -> (i32, i32) {
+        let mut nx = x;
+        let mut ny = y;
+        if nx + w > area.right {
+            nx = area.right - w;
+        }
+        if ny + h > area.bottom {
+            ny = area.bottom - h;
+        }
+        if nx < area.left {
+            nx = area.left;
+        }
+        if ny < area.top {
+            ny = area.top;
+        }
+        (nx, ny)
     }
 
     /// DWMWA_WINDOW_CORNER_PREFERENCE
@@ -173,8 +230,23 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
                     (x as i32, y as i32)
                 };
                 // Below-right of the cursor so it clears the selected text.
-                let px = cx + 6;
-                let py = cy + 16;
+                let mut px = cx + 6;
+                let mut py = cy + 16;
+
+                // Keep the whole button inside the work area of the monitor the
+                // cursor is on, so it never spills off the edge or onto another
+                // screen.
+                let hmon = win32::MonitorFromPoint(
+                    win32::POINT { x: cx, y: cy },
+                    win32::MONITOR_DEFAULTTONEAREST,
+                );
+                if let Some(area) = win32::work_area(hmon) {
+                    let (nx, ny) =
+                        win32::clamp_to(px, py, COLLAPSED_W as i32, COLLAPSED_H as i32, &area);
+                    px = nx;
+                    py = ny;
+                }
+
                 // Position + show topmost WITHOUT activating (keeps source focus).
                 win32::SetWindowPos(
                     hwnd.0,
@@ -207,12 +279,50 @@ pub fn set_floating_expanded(app: &AppHandle, expanded: bool) -> Result<()> {
         Some(w) => w,
         None => return Ok(()),
     };
-    let size = if expanded {
-        PhysicalSize::new(EXPANDED_W, EXPANDED_H)
+    let (w, h) = if expanded {
+        (EXPANDED_W as i32, EXPANDED_H as i32)
     } else {
-        PhysicalSize::new(COLLAPSED_W, COLLAPSED_H)
+        (COLLAPSED_W as i32, COLLAPSED_H as i32)
     };
-    win.set_size(size).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = win.hwnd() {
+            unsafe {
+                // Current top-left, then clamp the NEW size to the monitor so an
+                // expanding card never spills off the bottom/right or across a
+                // monitor boundary.
+                let mut rect = win32::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                let (mut x, mut y) = if win32::GetWindowRect(hwnd.0, &mut rect) != 0 {
+                    (rect.left, rect.top)
+                } else {
+                    (0, 0)
+                };
+                let hmon = win32::MonitorFromWindow(hwnd.0, win32::MONITOR_DEFAULTTONEAREST);
+                if let Some(area) = win32::work_area(hmon) {
+                    let (nx, ny) = win32::clamp_to(x, y, w, h, &area);
+                    x = nx;
+                    y = ny;
+                }
+                win32::SetWindowPos(
+                    hwnd.0,
+                    win32::hwnd_topmost(),
+                    x,
+                    y,
+                    w,
+                    h,
+                    win32::SWP_NOACTIVATE,
+                );
+            }
+            return Ok(());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        win.set_size(PhysicalSize::new(w as u32, h as u32))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
     Ok(())
 }
 
