@@ -12,7 +12,7 @@ mod shortcuts;
 
 use config::{AppSettings, load_settings, save_settings as persist_settings};
 use core::{
-    engine::{TranslationEngine, TranslationRequest},
+    engine::{cuda_available, TranslationEngine, TranslationRequest},
     history::{HistoryEntry, TranslationHistory},
     model_manager::{DownloadState, ModelManager, ModelSpec, ModelStatus},
 };
@@ -286,6 +286,8 @@ async fn save_settings(
         settings.triple_copy_interval_ms,
         settings.triple_copy_count,
     );
+    // GPU preference applies on the next engine (re)start.
+    state.engine.set_use_gpu(settings.use_gpu);
 
     {
         let mut s = state.settings.lock().await;
@@ -543,6 +545,12 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn set_floating_expanded(expanded: bool, app: AppHandle) -> Result<(), String> {
     os_integration::set_floating_expanded(&app, expanded).map_err(|e| e.to_string())
+}
+
+/// Whether the CUDA backend is installed (GPU pack present next to the engine).
+#[tauri::command]
+async fn is_cuda_available() -> Result<bool, String> {
+    Ok(cuda_available())
 }
 
 /// Lists executable names of apps with a visible window, for the exclusion picker.
@@ -1079,6 +1087,7 @@ pub fn run() {
             hide_floating_button,
             set_floating_expanded,
             list_app_processes,
+            is_cuda_available,
             set_autostart,
             get_autostart,
             restart_engine,

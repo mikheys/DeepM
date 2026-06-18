@@ -56,6 +56,7 @@ export type Strings = {
   settings_default_target: string;
   settings_gpu: string;
   settings_gpu_hint: string;
+  settings_gpu_unavailable: string;
   settings_glossary: string;
   settings_glossary_desc: string;
   settings_source_term: string;
@@ -160,6 +161,7 @@ const en: Strings = {
   settings_default_target: "Default target language",
   settings_gpu: "GPU acceleration",
   settings_gpu_hint: "Use CUDA if available",
+  settings_gpu_unavailable: "CUDA not detected — install the GPU pack to enable",
   settings_glossary: "Glossary",
   settings_glossary_desc: "Terms here are passed to the model via terminology intervention.",
   settings_source_term: "Source term",
@@ -260,6 +262,7 @@ const ru: Strings = {
   settings_default_target: "Язык перевода по умолчанию",
   settings_gpu: "Ускорение GPU",
   settings_gpu_hint: "Использовать CUDA при наличии",
+  settings_gpu_unavailable: "CUDA не обнаружена — установите GPU-пакет для активации",
   settings_glossary: "Глоссарий",
   settings_glossary_desc: "Термины передаются модели как подсказки перевода.",
   settings_source_term: "Исходный термин",

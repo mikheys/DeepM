@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { AppSettings, GlossaryEntry } from "../types";
 import type { Locale } from "../i18n";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
-import { getSettings, saveSettings } from "../api";
+import { getSettings, saveSettings, isCudaAvailable } from "../api";
 import { useI18n } from "../i18n-context";
 import HotkeyCapture from "./HotkeyCapture";
 import ExclusionsModal from "./ExclusionsModal";
@@ -22,9 +22,16 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
   const [newGlossaryTarget, setNewGlossaryTarget] = useState("");
   const [newGlossaryPair, setNewGlossaryPair] = useState("en->zh");
   const [showExclusions, setShowExclusions] = useState(false);
+  const [cudaAvailable, setCudaAvailable] = useState(true);
 
   useEffect(() => {
-    getSettings().then(setSettings).catch(() => {});
+    getSettings().then((s) => {
+      // If the CUDA pack isn't installed, force GPU off so the toggle reflects reality.
+      isCudaAvailable().then((ok) => {
+        setCudaAvailable(ok);
+        setSettings(ok ? s : { ...s, use_gpu: false });
+      }).catch(() => setSettings(s));
+    }).catch(() => {});
   }, []);
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -97,10 +104,13 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             <label>{t.settings_gpu}</label>
             <input
               type="checkbox"
-              checked={settings.use_gpu}
+              checked={cudaAvailable && settings.use_gpu}
+              disabled={!cudaAvailable}
               onChange={(e) => update("use_gpu", e.target.checked)}
             />
-            <span className="settings-hint">{t.settings_gpu_hint}</span>
+            <span className="settings-hint">
+              {cudaAvailable ? t.settings_gpu_hint : t.settings_gpu_unavailable}
+            </span>
           </div>
         </section>
 

@@ -122,6 +122,10 @@ export async function deleteModel(size: string, quantization: string): Promise<v
   return invoke("delete_model", { size, quantization });
 }
 
+export async function isCudaAvailable(): Promise<boolean> {
+  return invoke("is_cuda_available");
+}
+
 export async function listAppProcesses(): Promise<string[]> {
   return invoke("list_app_processes");
 }

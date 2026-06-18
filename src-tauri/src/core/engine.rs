@@ -169,7 +169,7 @@ pub struct TranslationEngine {
     server_process: Arc<Mutex<Option<LlamaServerProcess>>>,
     client: reqwest::Client,
     model_path: Arc<Mutex<Option<PathBuf>>>,
-    use_gpu: bool,
+    use_gpu: std::sync::atomic::AtomicBool,
     #[cfg(target_os = "windows")]
     job: Option<job::JobHandle>,
 }
@@ -180,10 +180,15 @@ impl TranslationEngine {
             server_process: Arc::new(Mutex::new(None)),
             client: reqwest::Client::new(),
             model_path: Arc::new(Mutex::new(None)),
-            use_gpu,
+            use_gpu: std::sync::atomic::AtomicBool::new(use_gpu),
             #[cfg(target_os = "windows")]
             job: job::create_kill_on_close(),
         }
+    }
+
+    /// Updates the GPU preference; applied on the next engine (re)start.
+    pub fn set_use_gpu(&self, value: bool) {
+        self.use_gpu.store(value, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub async fn start(&self, model_path: PathBuf) -> Result<()> {
@@ -210,7 +215,15 @@ impl TranslationEngine {
                .stdout(Stdio::null())
                .stderr(Stdio::piped());
 
-            if self.use_gpu {
+            // Don't pop up a console window for the sidecar (Windows).
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+
+            if self.use_gpu.load(std::sync::atomic::Ordering::Relaxed) {
                 cmd.arg("--n-gpu-layers").arg("99");
             }
 
@@ -430,6 +443,18 @@ fn llama_server_binary_path() -> Result<PathBuf> {
     // Fall back to PATH lookup
     log::warn!("llama-server not found locally; falling back to PATH");
     Ok(PathBuf::from("llama-server"))
+}
+
+/// True when the CUDA backend (ggml-cuda.dll) is present next to llama-server,
+/// i.e. the GPU pack is installed. Used to enable/disable the GPU toggle.
+pub fn cuda_available() -> bool {
+    match llama_server_binary_path() {
+        Ok(server) => server
+            .parent()
+            .map(|d| d.join("ggml-cuda.dll").exists())
+            .unwrap_or(false),
+        Err(_) => false,
+    }
 }
 
 fn num_cpus() -> usize {
