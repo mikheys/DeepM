@@ -1,5 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowLeftRight, ArrowUpDown, Columns2, LayoutPanelTop, Copy, X } from "lucide-react";
+import {
+  ArrowLeftRight, ArrowUpDown,
+  Columns2, Rows2,
+  Copy, X,
+} from "lucide-react";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import { translate, detectLanguage } from "../api";
 import { useI18n } from "../i18n-context";
@@ -8,10 +12,8 @@ import "./TranslatorPanel.css";
 type Props = {
   glossaryEntries?: { source: string; target: string; lang_pair: string }[];
   onTranslated?: (
-    sourceLang: string,
-    targetLang: string,
-    sourceText: string,
-    translatedText: string
+    sourceLang: string, targetLang: string,
+    sourceText: string, translatedText: string,
   ) => void;
   initialText?: string;
   onInitialTextConsumed?: () => void;
@@ -21,7 +23,6 @@ type Props = {
 
 type TranslationMode = "standard" | "contextual" | "formatted";
 
-/** EN↔RU swap; anything else → EN */
 function oppositePrimary(lang: string): string {
   if (lang === "en") return "ru";
   if (lang === "ru") return "en";
@@ -40,7 +41,6 @@ export default function TranslatorPanel({
   const [sourceText, setSourceText] = useState(initialText ?? "");
   const [translatedText, setTranslatedText] = useState("");
   const [sourceLang, setSourceLang] = useState(defaultSourceLang ?? "auto");
-  // "auto" means pick opposite of detected source (EN↔RU)
   const [targetLang, setTargetLang] = useState(defaultTargetLang ?? "auto");
   const [detectedLang, setDetectedLang] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -68,17 +68,12 @@ export default function TranslatorPanel({
 
   const runTranslate = useCallback(
     async (text: string, src: string, tgt: string) => {
-      if (!text.trim()) {
-        setTranslatedText("");
-        setDetectedLang(null);
-        return;
-      }
+      if (!text.trim()) { setTranslatedText(""); setDetectedLang(null); return; }
       setIsTranslating(true);
       setError(null);
 
       let resolvedSrc = src;
       let resolvedTgt = tgt;
-
       if (src === "auto") {
         try {
           const detected = await detectLanguage(text);
@@ -86,9 +81,7 @@ export default function TranslatorPanel({
           resolvedSrc = detected;
         } catch { /* keep defaults */ }
       }
-
-      // Auto target: pick opposite of detected source
-      if (tgt === "auto") {
+      if (resolvedTgt === "auto") {
         resolvedTgt = oppositePrimary(resolvedSrc);
       }
 
@@ -156,11 +149,8 @@ export default function TranslatorPanel({
   };
 
   const handleClearSource = () => {
-    setSourceText("");
-    setTranslatedText("");
-    setCharCount(0);
-    setDetectedLang(null);
-    setPrevContext(null);
+    setSourceText(""); setTranslatedText("");
+    setCharCount(0); setDetectedLang(null); setPrevContext(null);
   };
 
   const startDrag = (e: React.MouseEvent) => {
@@ -190,7 +180,7 @@ export default function TranslatorPanel({
     ? LANGUAGES.find((l) => l.code === detectedLang)?.nativeName
     : null;
 
-  // Show the auto-resolved target language in the badge
+  // Show resolved target when "auto" is selected
   const resolvedTarget = targetLang === "auto" && detectedLang
     ? oppositePrimary(detectedLang)
     : null;
@@ -203,23 +193,130 @@ export default function TranslatorPanel({
 
   const swapDisabled = sourceLang === "auto" || targetLang === "auto";
 
+  if (layout === "horizontal") {
+    return (
+      <div
+        className="translator-panel"
+        ref={containerRef}
+        style={{ "--split": `${splitRatio}%` } as React.CSSProperties}
+      >
+        {/* ── Shared header row ───────────────────────── */}
+        <div className="panel-header">
+          {/* Source controls */}
+          <div className="panel-header-section panel-header-source">
+            <select className="lang-select" value={sourceLang}
+              onChange={(e) => handleSourceLangChange(e.target.value)}>
+              {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+            {detectedBadge && sourceLang === "auto" && (
+              <span className="detected-badge">{detectedBadge}</span>
+            )}
+            <div className="toolbar-spacer" />
+            {sourceText && (
+              <button className="icon-btn" onClick={handleClearSource} title={t.clear}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Divider column spacer */}
+          <div className="panel-divider-col" />
+
+          {/* Target controls */}
+          <div className="panel-header-section panel-header-target">
+            <button
+              className="icon-btn swap-btn"
+              onClick={handleSwapLangs}
+              disabled={swapDisabled}
+              title={t.swap_langs}
+            >
+              <ArrowLeftRight size={14} strokeWidth={2} />
+            </button>
+            <select className="lang-select" value={targetLang}
+              onChange={(e) => handleTargetLangChange(e.target.value)}>
+              {TARGET_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+            {resolvedTarget && (
+              <span className="auto-target-badge">→ {resolvedTarget.toUpperCase()}</span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Body with draggable divider ──────────────── */}
+        <div className="panel-body">
+          <div className="pane-body pane-body-source">
+            <textarea
+              className="pane-textarea"
+              placeholder={t.source_placeholder}
+              value={sourceText}
+              onChange={handleSourceChange}
+              autoFocus
+            />
+          </div>
+          <div className="divider divider-h" onMouseDown={startDrag} />
+          <div className="pane-body pane-body-target">
+            <div className="output-area">
+              {isTranslating ? (
+                <span className="translating-indicator">{t.translating}</span>
+              ) : error ? (
+                <span className="error-text">{error}</span>
+              ) : (
+                <span className="output-text">{translatedText}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Shared footer row ───────────────────────── */}
+        <div className="panel-footer">
+          {/* Source footer */}
+          <div className="panel-footer-section panel-footer-source">
+            <select className="mode-select" value={mode}
+              onChange={(e) => setMode(e.target.value as TranslationMode)}
+              title={t.mode_hint}>
+              {MODE_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
+          </div>
+
+          {/* Divider column spacer */}
+          <div className="panel-divider-col" />
+
+          {/* Target footer */}
+          <div className="panel-footer-section panel-footer-target">
+            <div className="toolbar-spacer" />
+            <button
+              className="icon-btn"
+              onClick={() => setLayout("vertical")}
+              title="Switch to vertical layout"
+            >
+              <Rows2 size={15} />
+            </button>
+            {translatedText && (
+              <button className="icon-btn" onClick={handleCopyTranslation} title={t.copy_translation}>
+                <Copy size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Vertical layout ───────────────────────────────────
   return (
     <div
-      className={`translator-panel layout-${layout}`}
+      className="translator-panel"
       ref={containerRef}
       style={{ "--split": `${splitRatio}%` } as React.CSSProperties}
     >
-      {/* Source pane */}
-      <div className="pane pane-source">
+      <div className="pane-v pane-v-source">
         <div className="pane-toolbar">
-          <select
-            className="lang-select"
-            value={sourceLang}
-            onChange={(e) => handleSourceLangChange(e.target.value)}
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.name}</option>
-            ))}
+          <select className="lang-select" value={sourceLang}
+            onChange={(e) => handleSourceLangChange(e.target.value)}>
+            {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
           </select>
           {detectedBadge && sourceLang === "auto" && (
             <span className="detected-badge">{detectedBadge}</span>
@@ -239,12 +336,9 @@ export default function TranslatorPanel({
           autoFocus
         />
         <div className="pane-footer">
-          <select
-            className="mode-select"
-            value={mode}
+          <select className="mode-select" value={mode}
             onChange={(e) => setMode(e.target.value as TranslationMode)}
-            title={t.mode_hint}
-          >
+            title={t.mode_hint}>
             {MODE_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
@@ -253,14 +347,9 @@ export default function TranslatorPanel({
         </div>
       </div>
 
-      {/* Divider — thin line, no embedded button */}
-      <div
-        className={`divider divider-${layout}`}
-        onMouseDown={startDrag}
-      />
+      <div className="divider divider-v" onMouseDown={startDrag} />
 
-      {/* Target pane */}
-      <div className="pane pane-target">
+      <div className="pane-v pane-v-target">
         <div className="pane-toolbar">
           <button
             className="icon-btn swap-btn"
@@ -268,43 +357,17 @@ export default function TranslatorPanel({
             disabled={swapDisabled}
             title={t.swap_langs}
           >
-            {layout === "horizontal"
-              ? <ArrowLeftRight size={14} strokeWidth={2} />
-              : <ArrowUpDown size={14} strokeWidth={2} />
-            }
+            <ArrowUpDown size={14} strokeWidth={2} />
           </button>
-          <select
-            className="lang-select"
-            value={targetLang}
-            onChange={(e) => handleTargetLangChange(e.target.value)}
-          >
-            {TARGET_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.name}</option>
-            ))}
+          <select className="lang-select" value={targetLang}
+            onChange={(e) => handleTargetLangChange(e.target.value)}>
+            {TARGET_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
           </select>
           {resolvedTarget && (
-            <span className="auto-target-badge" title="Auto-selected based on source">
-              → {resolvedTarget.toUpperCase()}
-            </span>
-          )}
-          <div className="toolbar-spacer" />
-          <button
-            className="icon-btn"
-            onClick={() => setLayout(layout === "horizontal" ? "vertical" : "horizontal")}
-            title="Toggle layout"
-          >
-            {layout === "horizontal"
-              ? <LayoutPanelTop size={15} />
-              : <Columns2 size={15} />
-            }
-          </button>
-          {translatedText && (
-            <button className="icon-btn" onClick={handleCopyTranslation} title={t.copy_translation}>
-              <Copy size={15} />
-            </button>
+            <span className="auto-target-badge">→ {resolvedTarget.toUpperCase()}</span>
           )}
         </div>
-        <div className="pane-textarea output-area">
+        <div className="output-area">
           {isTranslating ? (
             <span className="translating-indicator">{t.translating}</span>
           ) : error ? (
@@ -313,7 +376,21 @@ export default function TranslatorPanel({
             <span className="output-text">{translatedText}</span>
           )}
         </div>
-        <div className="pane-footer" />
+        <div className="pane-footer">
+          <div className="toolbar-spacer" />
+          <button
+            className="icon-btn"
+            onClick={() => setLayout("horizontal")}
+            title="Switch to horizontal layout"
+          >
+            <Columns2 size={15} />
+          </button>
+          {translatedText && (
+            <button className="icon-btn" onClick={handleCopyTranslation} title={t.copy_translation}>
+              <Copy size={15} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

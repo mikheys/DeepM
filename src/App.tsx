@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { Languages, History, Package, Settings } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  Languages, History, Package, Settings,
+  ChevronRight, ChevronLeft,
+} from "lucide-react";
 import type { AppView, TranslationHistoryEntry } from "./types";
 import type { Locale } from "./i18n";
 import { I18nProvider, useI18n } from "./i18n-context";
@@ -13,14 +16,12 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "./styles/App.css";
 
-// ── Floating button window (separate window rendered at /?window=floating)
 const isFloatingWindow = new URLSearchParams(window.location.search).get("window") === "floating";
 
 export default function App() {
   if (isFloatingWindow) {
     return <FloatingButton />;
   }
-
   return (
     <I18nProvider initial="en">
       <MainAppWithLocale />
@@ -56,13 +57,54 @@ function MainApp() {
   const [defaultTargetLang, setDefaultTargetLang] = useState("en");
   const [defaultSourceLang, setDefaultSourceLang] = useState("auto");
 
-  useEffect(() => {
-    getModelStatus().then((status) => {
-      if (status.type === "ready") {
-        setModelReady(true);
-      }
-    }).catch(() => {});
+  // Sidebar: compact by default, persisted in localStorage
+  const [sidebarExpanded, setSidebarExpanded] = useState(
+    () => localStorage.getItem("sidebarExpanded") === "true"
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebarExpanded", String(next));
+      return next;
+    });
+  }, []);
 
+  // Model status: poll for first 60s as fallback if model_ready event is missed
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+
+    const check = () => {
+      if (cancelled) return;
+      getModelStatus()
+        .then((s) => {
+          if (s.type === "ready") {
+            setModelReady(true);
+          } else if (attempts < 12) {
+            attempts++;
+            setTimeout(check, 5000);
+          }
+        })
+        .catch(() => {
+          if (attempts < 12) {
+            attempts++;
+            setTimeout(check, 5000);
+          }
+        });
+    };
+
+    check();
+    return () => { cancelled = true; };
+  }, []);
+
+  // model_ready listener — stable (no [view] dependency so it's never torn down)
+  useEffect(() => {
+    const unsub = listen("model_ready", () => setModelReady(true));
+    return () => { unsub.then((f) => f()); };
+  }, []);
+
+  // Settings load
+  useEffect(() => {
     getSettings().then((s) => {
       setGlossary(s.glossary);
       setDefaultTargetLang(s.default_target_lang);
@@ -70,27 +112,19 @@ function MainApp() {
     }).catch(() => {});
   }, []);
 
+  // Other event listeners
   useEffect(() => {
     const subs: Promise<() => void>[] = [];
-
-    subs.push(listen("model_ready", () => {
-      setModelReady(true);
-    }));
 
     subs.push(listen<{ text: string }>("insert_text", (e) => {
       setView("translator");
       setInjectedText(e.payload.text);
     }));
-
-    subs.push(listen("translate_replace_started", () => {
-      setTranslateReplaceActive(true);
-    }));
-    subs.push(listen("translate_replace_done", () => {
-      setTranslateReplaceActive(false);
-    }));
+    subs.push(listen("translate_replace_started", () => setTranslateReplaceActive(true)));
+    subs.push(listen("translate_replace_done", () => setTranslateReplaceActive(false)));
 
     return () => { subs.forEach((p) => p.then((f) => f())); };
-  }, [view]);
+  }, []);
 
   useEffect(() => {
     const sub = listen("hotkey_translate_replace", () => {
@@ -103,31 +137,51 @@ function MainApp() {
     return () => { sub.then((f) => f()); };
   }, [modelReady, defaultSourceLang, defaultTargetLang]);
 
-  const handleModelReady = () => {
-    setModelReady(true);
-    setView("translator");
-  };
-
+  const handleModelReady = () => { setModelReady(true); setView("translator"); };
   const handleHistorySelect = (entry: TranslationHistoryEntry) => {
     setHistoryEntry(entry);
     setView("translator");
   };
-
   const handleInjectedConsumed = () => setInjectedText(undefined);
 
   return (
     <div className="app">
-      <nav className="sidebar">
-        <div className="sidebar-logo">DeepM</div>
-        <div className="sidebar-nav">
-          <NavBtn active={view === "translator"} onClick={() => setView("translator")} icon={<Languages size={20} />} label={t.nav_translate} />
-          <NavBtn active={view === "history"} onClick={() => setView("history")} icon={<History size={20} />} label={t.nav_history} />
-          <NavBtn active={view === "model_manager"} onClick={() => setView("model_manager")} icon={<Package size={20} />} label={t.nav_model} />
-          <NavBtn active={view === "settings"} onClick={() => setView("settings")} icon={<Settings size={20} />} label={t.nav_settings} />
+      <nav className={`sidebar ${sidebarExpanded ? "sidebar-expanded" : "sidebar-compact"}`}>
+        {/* Header: logo or expand button */}
+        <div className="sidebar-header">
+          {sidebarExpanded ? (
+            <>
+              <span className="sidebar-logo-text">DeepM</span>
+              <button className="sidebar-toggle" onClick={toggleSidebar} title="Collapse sidebar">
+                <ChevronLeft size={15} />
+              </button>
+            </>
+          ) : (
+            <button className="sidebar-toggle sidebar-toggle-expand" onClick={toggleSidebar} title="Expand sidebar">
+              <ChevronRight size={15} />
+            </button>
+          )}
         </div>
+
+        {/* Navigation */}
+        <div className="sidebar-nav">
+          <NavBtn active={view === "translator"} onClick={() => setView("translator")}
+            icon={<Languages size={18} />} label={t.nav_translate} expanded={sidebarExpanded} />
+          <NavBtn active={view === "history"} onClick={() => setView("history")}
+            icon={<History size={18} />} label={t.nav_history} expanded={sidebarExpanded} />
+          <NavBtn active={view === "model_manager"} onClick={() => setView("model_manager")}
+            icon={<Package size={18} />} label={t.nav_model} expanded={sidebarExpanded} />
+          <NavBtn active={view === "settings"} onClick={() => setView("settings")}
+            icon={<Settings size={18} />} label={t.nav_settings} expanded={sidebarExpanded} />
+        </div>
+
+        {/* Status */}
         <div className="sidebar-bottom">
-          <div className={`model-status-dot ${modelReady ? "ready" : "not-ready"}`} />
-          <span className="model-status-label">{modelReady ? t.model_ready : t.no_model}</span>
+          <div className={`model-status-dot ${modelReady ? "ready" : "not-ready"}`}
+            title={modelReady ? t.model_ready : t.no_model} />
+          {sidebarExpanded && (
+            <span className="model-status-label">{modelReady ? t.model_ready : t.no_model}</span>
+          )}
         </div>
       </nav>
 
@@ -138,7 +192,6 @@ function MainApp() {
           </div>
         )}
 
-        {view === "onboarding" && <ModelManager onModelReady={handleModelReady} isOnboarding />}
         {view === "translator" && (
           <TranslatorPanel
             glossaryEntries={glossary}
@@ -146,10 +199,14 @@ function MainApp() {
             onInitialTextConsumed={handleInjectedConsumed}
             defaultSourceLang={defaultSourceLang}
             defaultTargetLang={defaultTargetLang}
+            onTranslated={(sl, tl, st, tt) => {
+              if (historyEntry) setHistoryEntry(null);
+            }}
           />
         )}
         {view === "history" && <HistoryPanel onSelect={handleHistorySelect} />}
         {view === "model_manager" && <ModelManager onModelReady={handleModelReady} />}
+        {view === "onboarding" && <ModelManager onModelReady={handleModelReady} isOnboarding />}
         {view === "settings" && (
           <SettingsPanel
             onClose={() => setView("translator")}
@@ -162,13 +219,19 @@ function MainApp() {
   );
 }
 
-function NavBtn({ active, onClick, icon, label }: {
-  active: boolean; onClick: () => void; icon: React.ReactNode; label: string;
+function NavBtn({
+  active, onClick, icon, label, expanded,
+}: {
+  active: boolean; onClick: () => void; icon: React.ReactNode; label: string; expanded: boolean;
 }) {
   return (
-    <button className={`nav-btn ${active ? "active" : ""}`} onClick={onClick} title={label}>
+    <button
+      className={`nav-btn ${active ? "active" : ""} ${expanded ? "nav-btn-full" : ""}`}
+      onClick={onClick}
+      title={label}
+    >
       <span className="nav-icon">{icon}</span>
-      <span className="nav-label">{label}</span>
+      {expanded && <span className="nav-label">{label}</span>}
     </button>
   );
 }

@@ -5,6 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/deepm.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DeepM</title>
+    <!-- Apply transparent background BEFORE any CSS/JS loads for the floating window -->
+    <script>if(location.search.includes('window=floating'))document.documentElement.classList.add('floating-window');</script>
+    <style>.floating-window,.floating-window body,.floating-window #root{background:transparent!important}</style>
   </head>
   <body>
     <div id="root"></div>

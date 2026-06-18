@@ -9,14 +9,11 @@ import "./FloatingButton.css";
 
 type UIState = "idle" | "loading" | "result" | "error";
 
-// Compact: just the square button.
-// Expanded: button row + popup card.
 const BTN_SIZE = 52;
 const POPUP_W = 300;
 const POPUP_H = 160;
 const GAP = 6;
 
-/** Detect the primary language from text (2-char code or "?") */
 async function detectLang(text: string): Promise<string> {
   try {
     return await invoke<string>("detect_language", { text });
@@ -25,7 +22,6 @@ async function detectLang(text: string): Promise<string> {
   }
 }
 
-/** Auto-pick target based on detected source: EN↔RU, otherwise English */
 function autoTarget(detected: string): string {
   if (detected === "ru") return "en";
   if (detected === "en") return "ru";
@@ -33,83 +29,42 @@ function autoTarget(detected: string): string {
 }
 
 export default function FloatingButton() {
-  const [text, setText] = useState("");
   const [translation, setTranslation] = useState("");
   const [uiState, setUiState] = useState<UIState>("idle");
-  const [sourceLang, setSourceLang] = useState("auto");
-  const [targetLang, setTargetLang] = useState("en");
-  const [detectedLang, setDetectedLang] = useState<string | null>(null);
+  const [langLabel, setLangLabel] = useState("");
   const defaultTargetRef = useRef("en");
+  // Store current translation params in refs to allow retry without stale closures
+  const lastTextRef = useRef("");
+  const lastSrcRef = useRef("auto");
+  const lastTgtRef = useRef("en");
 
-  // Make the window background fully transparent so rounded corners work
+  // Force transparent background immediately — runs before any paint
   useEffect(() => {
-    document.documentElement.style.background = "transparent";
-    document.body.style.background = "transparent";
+    document.documentElement.style.cssText += ";background:transparent!important";
+    document.body.style.cssText += ";background:transparent!important";
     const root = document.getElementById("root");
-    if (root) root.style.background = "transparent";
+    if (root) root.style.cssText += ";background:transparent!important";
   }, []);
 
+  // Load default settings once
   useEffect(() => {
     getSettings().then((s) => {
       defaultTargetRef.current = s.default_target_lang;
-      setTargetLang(s.default_target_lang);
-      setSourceLang(s.default_source_lang);
     }).catch(() => {});
-
-    const unsubText = listen<{ text: string }>("floating_text", async (e) => {
-      const incoming = e.payload.text;
-      setText(incoming);
-      setTranslation("");
-      setUiState("idle");
-
-      // Auto-detect and choose opposite language
-      const detected = await detectLang(incoming);
-      setDetectedLang(detected);
-      setTargetLang(autoTarget(detected));
-      await getCurrentWindow().setSize(new LogicalSize(BTN_SIZE, BTN_SIZE)).catch(() => {});
-    });
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") doHide();
-    };
-    window.addEventListener("keydown", onKey);
-
-    return () => {
-      unsubText.then((f) => f());
-      window.removeEventListener("keydown", onKey);
-    };
   }, []);
 
-  // Resize window when state changes
-  useEffect(() => {
-    const isExpanded = uiState === "result" || uiState === "error";
-    if (isExpanded) {
-      getCurrentWindow()
-        .setSize(new LogicalSize(POPUP_W, BTN_SIZE + GAP + POPUP_H))
-        .catch(() => {});
-    } else {
-      getCurrentWindow()
-        .setSize(new LogicalSize(BTN_SIZE, BTN_SIZE))
-        .catch(() => {});
-    }
-  }, [uiState]);
-
-  const doHide = () => {
-    invoke("hide_floating_button").catch(() => {});
-    setUiState("idle");
-    setText("");
-    setTranslation("");
-    setDetectedLang(null);
-  };
-
-  const doTranslate = async () => {
-    if (!text.trim()) return;
+  // Translate directly without depending on React state (avoids stale closures)
+  const translateDirectly = async (txt: string, src: string, tgt: string) => {
+    if (!txt.trim()) return;
+    lastTextRef.current = txt;
+    lastSrcRef.current = src;
+    lastTgtRef.current = tgt;
     setUiState("loading");
     try {
       const result = await invoke<string>("quick_translate", {
-        sourceText: text,
-        sourceLang,
-        targetLang,
+        sourceText: txt,
+        sourceLang: src,
+        targetLang: tgt,
       });
       setTranslation(result);
       setUiState("result");
@@ -119,23 +74,71 @@ export default function FloatingButton() {
     }
   };
 
+  useEffect(() => {
+    // Escape key hides the window
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") doHide();
+    };
+    window.addEventListener("keydown", onKey);
+
+    // floating_text → detect language → auto-translate immediately (no click needed)
+    const unsubText = listen<{ text: string }>("floating_text", async (e) => {
+      const incoming = e.payload.text;
+      setTranslation("");
+      setUiState("idle");
+
+      // Detect language, then translate immediately
+      const detected = await detectLang(incoming);
+      const tgt = autoTarget(detected);
+      const label = `${detected.toUpperCase()} → ${tgt.toUpperCase()}`;
+      setLangLabel(label);
+
+      // Auto-translate: passes values directly to avoid stale-closure bug
+      await translateDirectly(incoming, "auto", tgt);
+    });
+
+    return () => {
+      unsubText.then((f) => f());
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // Resize window when ui state changes
+  useEffect(() => {
+    const expanded = uiState === "result" || uiState === "error";
+    getCurrentWindow()
+      .setSize(new LogicalSize(
+        expanded ? POPUP_W : BTN_SIZE,
+        expanded ? BTN_SIZE + GAP + POPUP_H : BTN_SIZE,
+      ))
+      .catch(() => {});
+  }, [uiState]);
+
+  const doHide = () => {
+    invoke("hide_floating_button").catch(() => {});
+    setUiState("idle");
+    setTranslation("");
+    setLangLabel("");
+  };
+
+  const doRetry = () => {
+    translateDirectly(lastTextRef.current, lastSrcRef.current, lastTgtRef.current);
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(translation);
     doHide();
   };
 
   const isExpanded = uiState === "result" || uiState === "error";
-  const langLabel = detectedLang
-    ? `${detectedLang.toUpperCase()} → ${targetLang.toUpperCase()}`
-    : `→ ${targetLang.toUpperCase()}`;
 
   return (
     <div className={`fb-root ${isExpanded ? "fb-expanded" : ""}`}>
-      {/* Square icon button — always visible */}
+      {/* Square button — click always dismisses */}
       <button
         className={`fb-btn ${uiState === "loading" ? "fb-btn-loading" : ""}`}
-        onClick={uiState === "idle" ? doTranslate : undefined}
-        title={uiState === "idle" ? "Translate" : undefined}
+        onClick={doHide}
+        title="Close"
       >
         {uiState === "loading" ? (
           <span className="fb-spinner" />
@@ -144,14 +147,13 @@ export default function FloatingButton() {
         )}
       </button>
 
-      {/* Popup card — shown only when expanded */}
       {isExpanded && (
         <div className={`fb-card ${uiState === "error" ? "fb-card-error" : ""}`}>
           <div className="fb-card-header">
             <span className="fb-lang-badge">{langLabel}</span>
             <div className="fb-card-actions">
               {uiState === "error" && (
-                <button className="fb-icon-action" onClick={doTranslate} title="Retry">
+                <button className="fb-icon-action" onClick={doRetry} title="Retry">
                   <RotateCcw size={14} />
                 </button>
               )}
