@@ -125,6 +125,23 @@ pub fn spawn_hook(
                             if st.is_translate_replace_combo(&tr_hotkey) {
                                 let _ = app.emit("hotkey_translate_replace", ());
                             }
+
+                            // Hide floating button when user types / deletes text
+                            let is_modifier = matches!(key,
+                                Key::ControlLeft | Key::ControlRight |
+                                Key::ShiftLeft | Key::ShiftRight |
+                                Key::Alt | Key::AltGr |
+                                Key::MetaLeft | Key::MetaRight |
+                                Key::CapsLock | Key::F1 | Key::F2 | Key::F3 |
+                                Key::F4 | Key::F5 | Key::F6 | Key::F7 | Key::F8 |
+                                Key::F9 | Key::F10 | Key::F11 | Key::F12
+                            );
+                            if !is_modifier && !st.ctrl_held() {
+                                let app_c = app.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    super::hide_floating(&app_c);
+                                });
+                            }
                         }
                         EventType::KeyRelease(key) => {
                             st.held_keys.remove(&key);

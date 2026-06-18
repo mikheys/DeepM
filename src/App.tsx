@@ -47,7 +47,7 @@ function MainAppWithLocale() {
 
 function MainApp() {
   const { t, locale, setLocale } = useI18n();
-  const [view, setView] = useState<AppView>("onboarding");
+  const [view, setView] = useState<AppView>("translator");
   const [modelReady, setModelReady] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<TranslationHistoryEntry | null>(null);
   const [glossary, setGlossary] = useState<{ source: string; target: string; lang_pair: string }[]>([]);
@@ -60,7 +60,6 @@ function MainApp() {
     getModelStatus().then((status) => {
       if (status.type === "ready") {
         setModelReady(true);
-        setView("translator");
       }
     }).catch(() => {});
 
@@ -76,7 +75,6 @@ function MainApp() {
 
     subs.push(listen("model_ready", () => {
       setModelReady(true);
-      if (view === "onboarding" || view === "model_manager") setView("translator");
     }));
 
     subs.push(listen<{ text: string }>("insert_text", (e) => {

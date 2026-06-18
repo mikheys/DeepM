@@ -21,7 +21,7 @@ type Props = {
 
 type TranslationMode = "standard" | "contextual" | "formatted";
 
-/** Choose the "opposite primary" language: en↔ru, others → en */
+/** EN↔RU swap; anything else → EN */
 function oppositePrimary(lang: string): string {
   if (lang === "en") return "ru";
   if (lang === "ru") return "en";
@@ -40,9 +40,8 @@ export default function TranslatorPanel({
   const [sourceText, setSourceText] = useState(initialText ?? "");
   const [translatedText, setTranslatedText] = useState("");
   const [sourceLang, setSourceLang] = useState(defaultSourceLang ?? "auto");
-  const [targetLang, setTargetLang] = useState(defaultTargetLang ?? "ru");
-  /** When true, target follows detected source automatically */
-  const [autoTarget, setAutoTarget] = useState(true);
+  // "auto" means pick opposite of detected source (EN↔RU)
+  const [targetLang, setTargetLang] = useState(defaultTargetLang ?? "auto");
   const [detectedLang, setDetectedLang] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,13 +56,7 @@ export default function TranslatorPanel({
   const isDragging = useRef(false);
 
   useEffect(() => { if (defaultSourceLang) setSourceLang(defaultSourceLang); }, [defaultSourceLang]);
-
-  useEffect(() => {
-    if (defaultTargetLang) {
-      setTargetLang(defaultTargetLang);
-      setAutoTarget(false); // user explicitly configured a default
-    }
-  }, [defaultTargetLang]);
+  useEffect(() => { if (defaultTargetLang) setTargetLang(defaultTargetLang); }, [defaultTargetLang]);
 
   useEffect(() => {
     if (initialText) {
@@ -83,19 +76,20 @@ export default function TranslatorPanel({
       setIsTranslating(true);
       setError(null);
 
-      // Auto-detect source and choose opposite target if autoTarget is on
       let resolvedSrc = src;
       let resolvedTgt = tgt;
+
       if (src === "auto") {
         try {
           const detected = await detectLanguage(text);
           setDetectedLang(detected);
           resolvedSrc = detected;
-          if (autoTarget) {
-            resolvedTgt = oppositePrimary(detected);
-            setTargetLang(resolvedTgt);
-          }
         } catch { /* keep defaults */ }
+      }
+
+      // Auto target: pick opposite of detected source
+      if (tgt === "auto") {
+        resolvedTgt = oppositePrimary(resolvedSrc);
       }
 
       try {
@@ -120,7 +114,7 @@ export default function TranslatorPanel({
         setIsTranslating(false);
       }
     },
-    [glossaryEntries, onTranslated, prevContext, mode, autoTarget]
+    [glossaryEntries, onTranslated, prevContext, mode]
   );
 
   const scheduleTranslate = useCallback(
@@ -139,13 +133,12 @@ export default function TranslatorPanel({
   };
 
   const handleSwapLangs = () => {
-    if (sourceLang === "auto") return;
+    if (sourceLang === "auto" || targetLang === "auto") return;
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
     setSourceText(translatedText);
     setTranslatedText(sourceText);
     setCharCount(translatedText.length);
-    setAutoTarget(false);
   };
 
   const handleSourceLangChange = (code: string) => {
@@ -155,7 +148,6 @@ export default function TranslatorPanel({
 
   const handleTargetLangChange = (code: string) => {
     setTargetLang(code);
-    setAutoTarget(false); // user manually chose target → disable auto
     scheduleTranslate(sourceText, sourceLang, code);
   };
 
@@ -171,7 +163,6 @@ export default function TranslatorPanel({
     setPrevContext(null);
   };
 
-  // Drag-to-resize divider — works on the divider AND on the handle button
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault();
     isDragging.current = true;
@@ -199,11 +190,18 @@ export default function TranslatorPanel({
     ? LANGUAGES.find((l) => l.code === detectedLang)?.nativeName
     : null;
 
+  // Show the auto-resolved target language in the badge
+  const resolvedTarget = targetLang === "auto" && detectedLang
+    ? oppositePrimary(detectedLang)
+    : null;
+
   const MODE_OPTIONS: { value: TranslationMode; label: string }[] = [
-    { value: "standard", label: t.mode_standard },
+    { value: "standard",   label: t.mode_standard },
     { value: "contextual", label: t.mode_contextual },
-    { value: "formatted", label: t.mode_formatted },
+    { value: "formatted",  label: t.mode_formatted },
   ];
+
+  const swapDisabled = sourceLang === "auto" || targetLang === "auto";
 
   return (
     <div
@@ -227,16 +225,6 @@ export default function TranslatorPanel({
             <span className="detected-badge">{detectedBadge}</span>
           )}
           <div className="toolbar-spacer" />
-          <select
-            className="mode-select"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as TranslationMode)}
-            title={t.mode_hint}
-          >
-            {MODE_OPTIONS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
           {sourceText && (
             <button className="icon-btn" onClick={handleClearSource} title={t.clear}>
               <X size={14} />
@@ -251,31 +239,40 @@ export default function TranslatorPanel({
           autoFocus
         />
         <div className="pane-footer">
+          <select
+            className="mode-select"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as TranslationMode)}
+            title={t.mode_hint}
+          >
+            {MODE_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
           <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
         </div>
       </div>
 
-      {/* Divider with integrated handle */}
+      {/* Divider — thin line, no embedded button */}
       <div
         className={`divider divider-${layout}`}
         onMouseDown={startDrag}
-      >
-        <button
-          className={`divider-handle ${sourceLang === "auto" ? "divider-handle-disabled" : ""}`}
-          onMouseDown={startDrag}
-          onClick={(e) => { e.stopPropagation(); handleSwapLangs(); }}
-          title={t.swap_langs}
-        >
-          {layout === "horizontal"
-            ? <ArrowLeftRight size={13} strokeWidth={2} />
-            : <ArrowUpDown size={13} strokeWidth={2} />
-          }
-        </button>
-      </div>
+      />
 
       {/* Target pane */}
       <div className="pane pane-target">
         <div className="pane-toolbar">
+          <button
+            className="icon-btn swap-btn"
+            onClick={handleSwapLangs}
+            disabled={swapDisabled}
+            title={t.swap_langs}
+          >
+            {layout === "horizontal"
+              ? <ArrowLeftRight size={14} strokeWidth={2} />
+              : <ArrowUpDown size={14} strokeWidth={2} />
+            }
+          </button>
           <select
             className="lang-select"
             value={targetLang}
@@ -285,8 +282,10 @@ export default function TranslatorPanel({
               <option key={l.code} value={l.code}>{l.name}</option>
             ))}
           </select>
-          {autoTarget && sourceLang === "auto" && (
-            <span className="auto-target-badge" title="Auto-selected based on source">auto</span>
+          {resolvedTarget && (
+            <span className="auto-target-badge" title="Auto-selected based on source">
+              → {resolvedTarget.toUpperCase()}
+            </span>
           )}
           <div className="toolbar-spacer" />
           <button

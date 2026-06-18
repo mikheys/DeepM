@@ -41,6 +41,14 @@ export default function FloatingButton() {
   const [detectedLang, setDetectedLang] = useState<string | null>(null);
   const defaultTargetRef = useRef("en");
 
+  // Make the window background fully transparent so rounded corners work
+  useEffect(() => {
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
+    const root = document.getElementById("root");
+    if (root) root.style.background = "transparent";
+  }, []);
+
   useEffect(() => {
     getSettings().then((s) => {
       defaultTargetRef.current = s.default_target_lang;

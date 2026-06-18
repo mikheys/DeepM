@@ -46,7 +46,10 @@ export const LANGUAGES: Language[] = [
   { code: "bo", name: "Tibetan", nativeName: "བོད་སྐད།" },
 ];
 
-export const TARGET_LANGUAGES = LANGUAGES.filter((l) => l.code !== "auto");
+export const TARGET_LANGUAGES: Language[] = [
+  { code: "auto", name: "Auto (EN↔RU)", nativeName: "Авто" },
+  ...LANGUAGES.filter((l) => l.code !== "auto"),
+];
 
 export type ModelSize = "1.8B" | "7B";
 export type Quantization = "Q4_K_M" | "Q6_K" | "Q8_0";

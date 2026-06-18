@@ -20,7 +20,7 @@ use shortcuts::ShortcutConfig;
 
 // ── App State ────────────────────────────────────────────────────────────────
 
-struct AppState {
+pub(crate) struct AppState {
     settings: Mutex<AppSettings>,
     engine: Arc<TranslationEngine>,
     model_manager: Arc<ModelManager>,
@@ -215,10 +215,23 @@ async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String>
 async fn save_settings(
     settings: AppSettings,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     persist_settings(&settings).map_err(|e| e.to_string())?;
-    let mut s = state.settings.lock().await;
-    *s = settings;
+    let new_floating = settings.show_floating_button;
+    {
+        let mut s = state.settings.lock().await;
+        *s = settings;
+    }
+    // Sync runtime floating_enabled so Settings panel changes take effect immediately
+    {
+        let mut f = state.floating_enabled.lock().await;
+        *f = new_floating;
+    }
+    if !new_floating {
+        os_integration::hide_floating(&app);
+    }
+    os_integration::tray::rebuild_tray_menu(&app, new_floating);
     Ok(())
 }
 
@@ -597,9 +610,20 @@ pub fn run() {
                 let mq = model_quant.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    if manager.probe(&mp, &ms, &mq).await {
+                    // Try saved model first; fall back to any downloaded model
+                    let found = if manager.probe(&mp, &ms, &mq).await {
+                        Some((ms.clone(), mq.clone()))
+                    } else {
+                        manager.list_downloaded(&mp).into_iter().next().and_then(|(s, q)| {
+                            // We just need the file to exist — probe updates the status
+                            let path = PathBuf::from(&mp).join(format!("HY-MT1.5-{}-{}.gguf", s, q));
+                            if path.exists() { Some((s, q)) } else { None }
+                        })
+                    };
+
+                    if let Some((size, quant)) = found {
                         let path = PathBuf::from(&mp).join(
-                            format!("HY-MT1.5-{}-{}.gguf", ms, mq)
+                            format!("HY-MT1.5-{}-{}.gguf", size, quant)
                         );
                         match eng.start(path).await {
                             Ok(()) => {
@@ -731,22 +755,11 @@ pub fn run() {
                 });
             }
 
-            // tray_toggle_floating: toggle floating button from tray menu
+            // key_hide_floating: hide floating button when user types after selecting
             {
                 let h = handle.clone();
-                handle.listen("tray_toggle_floating", move |_| {
-                    let h = h.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let state = h.state::<AppState>();
-                        let mut f = state.floating_enabled.lock().await;
-                        *f = !*f;
-                        let new_val = *f;
-                        drop(f);
-                        if !new_val {
-                            os_integration::hide_floating(&h);
-                        }
-                        os_integration::tray::rebuild_tray_menu(&h, new_val);
-                    });
+                handle.listen("key_hide_floating", move |_| {
+                    os_integration::hide_floating(&h);
                 });
             }
 

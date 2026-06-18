@@ -17,6 +17,7 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--color-bg);
+  min-width: 0;
 }
 
 .layout-horizontal .pane-source {
@@ -35,14 +36,16 @@
   flex: 1;
 }
 
+/* ── Toolbar ─────────────────────────────────────────── */
 .pane-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
-  min-height: 42px;
+  min-height: 40px;
+  flex-shrink: 0;
 }
 
 .lang-select {
@@ -52,7 +55,9 @@
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-text-primary);
-  max-width: 200px;
+  min-width: 80px;
+  max-width: 180px;
+  flex-shrink: 1;
 }
 
 .lang-select:focus {
@@ -66,10 +71,25 @@
   background: var(--color-accent-light);
   padding: 2px 6px;
   border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.auto-target-badge {
+  font-size: 10px;
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .toolbar-spacer {
   flex: 1;
+  min-width: 0;
 }
 
 .icon-btn {
@@ -78,6 +98,7 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  flex-shrink: 0;
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
   font-size: 14px;
@@ -94,6 +115,17 @@
   cursor: default;
 }
 
+/* Swap button gets a slightly different treatment */
+.swap-btn {
+  color: var(--color-text-muted);
+}
+
+.swap-btn:not(:disabled):hover {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+}
+
+/* ── Textarea / output ───────────────────────────────── */
 .pane-textarea {
   flex: 1;
   width: 100%;
@@ -132,112 +164,95 @@ textarea.pane-textarea {
   font-size: 13px;
 }
 
+/* ── Footer ──────────────────────────────────────────── */
 .pane-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 4px 12px;
+  gap: 8px;
+  padding: 3px 10px;
   min-height: 26px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
+  flex-shrink: 0;
 }
 
 .char-count {
   font-size: 11px;
   color: var(--color-text-muted);
+  margin-left: auto;
 }
 
-/* Mode select in source toolbar */
+/* Mode select lives in the source pane footer */
 .mode-select {
   font-size: 11px;
-  padding: 2px 4px;
+  padding: 1px 4px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-text-muted);
-  max-width: 110px;
+  cursor: pointer;
+  outline: none;
+}
+
+.mode-select:hover {
+  border-color: var(--color-border);
+  background: var(--color-bg);
 }
 
 .mode-select:focus {
   border-color: var(--color-border-focus);
-  outline: none;
   color: var(--color-text-primary);
+  background: var(--color-bg);
 }
 
-.auto-target-badge {
-  font-size: 10px;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  padding: 1px 5px;
-  border-radius: 8px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-
-/* ── Divider ─────────────────────────────────────────────── */
-/*
- * The divider has TWO visual layers:
- * 1. The div itself is a thin line (col-resize cursor).
- * 2. The .divider-handle button is an embedded pill that also drags.
- *    Clicking briefly on it swaps languages; dragging resizes panels.
- */
+/* ── Divider — thin elegant line ─────────────────────── */
 .divider {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-border);
   flex-shrink: 0;
   z-index: 10;
-  transition: background var(--transition);
 }
 
 .divider-horizontal {
-  width: 5px;
+  width: 9px;
   cursor: col-resize;
 }
 
 .divider-vertical {
-  height: 5px;
+  height: 9px;
   cursor: row-resize;
 }
 
-.divider:hover {
-  background: var(--color-accent);
-}
-
-/* Handle: embedded in the divider line, same cursor as parent */
-.divider-handle {
+/* The visible 1px line via pseudo-element */
+.divider-horizontal::before {
+  content: '';
   position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  /* Critical: inherit col-resize / row-resize from parent */
-  cursor: inherit;
-  z-index: 1;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--color-border);
+  transition: background var(--transition), width var(--transition);
 }
 
-.divider-handle:hover:not(.divider-handle-disabled) {
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  border-color: var(--color-accent);
+.divider-vertical::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--color-border);
+  transition: background var(--transition), height var(--transition);
 }
 
-/* Disabled (auto source lang): can still drag, just no swap */
-.divider-handle-disabled {
-  opacity: 0.35;
+.divider-horizontal:hover::before {
+  background: var(--color-accent);
+  width: 2px;
 }
 
-.divider-handle-disabled:hover {
-  /* keep drag cursor but mute hover style */
-  background: var(--color-bg-secondary);
-  color: var(--color-text-muted);
-  border-color: var(--color-border);
+.divider-vertical:hover::before {
+  background: var(--color-accent);
+  height: 2px;
 }
