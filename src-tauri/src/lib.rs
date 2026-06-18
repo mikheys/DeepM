@@ -615,13 +615,15 @@ pub fn run() {
                         Some((ms.clone(), mq.clone()))
                     } else {
                         manager.list_downloaded(&mp).into_iter().next().and_then(|(s, q)| {
-                            // We just need the file to exist — probe updates the status
                             let path = PathBuf::from(&mp).join(format!("HY-MT1.5-{}-{}.gguf", s, q));
                             if path.exists() { Some((s, q)) } else { None }
                         })
                     };
 
                     if let Some((size, quant)) = found {
+                        // Ensure status is marked Ready (covers the fallback path where
+                        // probe() was not called for the found model).
+                        manager.probe(&mp, &size, &quant).await;
                         let path = PathBuf::from(&mp).join(
                             format!("HY-MT1.5-{}-{}.gguf", size, quant)
                         );

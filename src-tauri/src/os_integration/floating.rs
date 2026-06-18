@@ -2,8 +2,10 @@ use anyhow::Result;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const FLOATING_WINDOW_LABEL: &str = "floating";
-const WINDOW_W: u32 = 52;
-const WINDOW_H: u32 = 52;
+// The window is always the full popup size; visibility is controlled by CSS.
+// This avoids programmatic resize which is unreliable on non-resizable windows.
+const WINDOW_W: u32 = 300;
+const WINDOW_H: u32 = 218; // 52 (btn) + 6 (gap) + 160 (card)
 
 /// Creates the floating translate button window (hidden at startup).
 /// Called once during app setup.
@@ -26,6 +28,9 @@ pub fn create_floating_window(app: &AppHandle) -> Result<()> {
     .visible(false)
     .transparent(true)
     .shadow(false)
+    // Do NOT grab focus or activate when shown — must not disturb the user's
+    // text selection in console/terminal apps.
+    .focused(false)
     .build()
     .map_err(|e| anyhow::anyhow!("floating window build error: {e}"))?;
 

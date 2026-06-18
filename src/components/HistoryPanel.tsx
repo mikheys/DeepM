@@ -17,8 +17,9 @@ export default function HistoryPanel({ onSelect }: Props) {
 
   const load = async () => {
     setLoading(true);
+    // Server inserts newest at index 0, so the list is already newest-first.
     const h = await getHistory().catch(() => []);
-    setEntries(h.reverse());
+    setEntries(h);
     setLoading(false);
   };
 
