@@ -5,8 +5,8 @@ use tauri::{
 };
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 
-pub fn setup_tray(app: &AppHandle) -> Result<()> {
-    let menu = build_menu(app, true)?;
+pub fn setup_tray(app: &AppHandle, floating_enabled: bool) -> Result<()> {
+    let menu = build_menu(app, floating_enabled)?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().cloned().unwrap())

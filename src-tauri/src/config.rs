@@ -39,12 +39,18 @@ pub struct AppSettings {
     pub autostart: bool,
     pub start_in_tray: bool,
     pub triple_copy_interval_ms: u64,
+    #[serde(default = "default_locale")]
+    pub locale: String,
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 }
 
 fn default_schema_version() -> u32 {
     1
+}
+
+fn default_locale() -> String {
+    "en".to_string()
 }
 
 impl Default for AppSettings {
@@ -63,6 +69,7 @@ impl Default for AppSettings {
             autostart: false,
             start_in_tray: false,
             triple_copy_interval_ms: 500,
+            locale: "en".to_string(),
             schema_version: 1,
         }
     }

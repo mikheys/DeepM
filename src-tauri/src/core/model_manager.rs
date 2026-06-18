@@ -93,6 +93,30 @@ impl ModelManager {
         *flag = true;
     }
 
+    /// Returns list of (size, quant) pairs for all downloaded GGUF files.
+    pub fn list_downloaded(&self, model_dir: &str) -> Vec<(String, String)> {
+        let mut result = Vec::new();
+        for size in &["1.8B", "7B"] {
+            for quant in &["Q4_K_M", "Q6_K", "Q8_0"] {
+                let spec = ModelSpec { size: size.to_string(), quantization: quant.to_string() };
+                if std::path::Path::new(model_dir).join(spec.filename()).exists() {
+                    result.push((size.to_string(), quant.to_string()));
+                }
+            }
+        }
+        result
+    }
+
+    /// Deletes a model file from disk.
+    pub fn delete_model_file(&self, model_dir: &str, size: &str, quantization: &str) -> Result<()> {
+        let spec = ModelSpec { size: size.to_string(), quantization: quantization.to_string() };
+        let path = std::path::PathBuf::from(model_dir).join(spec.filename());
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
+    }
+
     pub async fn download(
         &self,
         model_dir: &str,

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tokio::sync::Mutex;
@@ -28,6 +29,8 @@ struct AppState {
     floating_enabled: Mutex<bool>,
     /// Last known cursor position from hook thread.
     last_cursor: Arc<StdMutex<(f64, f64)>>,
+    /// True when the main window has keyboard focus (skip floating button).
+    main_window_focused: Arc<AtomicBool>,
 }
 
 // ── Translation Commands ──────────────────────────────────────────────────────
@@ -109,6 +112,7 @@ async fn translate(
     target_lang: String,
     context: Option<String>,
     glossary_entries: Option<Vec<serde_json::Value>>,
+    formatted: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let resolved_source_lang = if source_lang == "auto" {
@@ -133,7 +137,7 @@ async fn translate(
         target_lang: target_lang.clone(),
         context,
         glossary,
-        formatted: false,
+        formatted: formatted.unwrap_or(false),
     };
 
     let result = state.engine.translate(req).await.map_err(|e| e.to_string())?;
@@ -408,6 +412,35 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// ── Model file management commands ───────────────────────────────────────────
+
+#[tauri::command]
+async fn list_downloaded_models(state: State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+    let model_dir = state.settings.lock().await.model_path.clone();
+    Ok(state.model_manager.list_downloaded(&model_dir))
+}
+
+#[tauri::command]
+async fn delete_model(
+    size: String,
+    quantization: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let model_dir = state.settings.lock().await.model_path.clone();
+    state.model_manager.delete_model_file(&model_dir, &size, &quantization).map_err(|e| e.to_string())?;
+    // If the just-deleted model was active, reset status
+    let is_active = state.model_manager.current_spec.lock().await
+        .as_ref()
+        .map_or(false, |s| s.size == size && s.quantization == quantization);
+    if is_active {
+        *state.model_manager.status.lock().await = ModelStatus::NotDownloaded;
+        *state.model_manager.current_spec.lock().await = None;
+        let _ = app.emit("model_removed", ());
+    }
+    Ok(())
+}
+
 // ── Engine restart command ───────────────────────────────────────────────────
 
 #[tauri::command]
@@ -487,6 +520,7 @@ pub fn run() {
     let engine = Arc::new(TranslationEngine::new(use_gpu));
     let model_manager = Arc::new(ModelManager::new());
     let cursor_pos: Arc<StdMutex<(f64, f64)>> = Arc::new(StdMutex::new((0.0, 0.0)));
+    let main_focused = Arc::new(AtomicBool::new(false));
 
     let state = AppState {
         settings: Mutex::new(settings),
@@ -495,6 +529,7 @@ pub fn run() {
         history: Mutex::new(TranslationHistory::load(history_path)),
         floating_enabled: Mutex::new(show_floating),
         last_cursor: Arc::clone(&cursor_pos),
+        main_window_focused: Arc::clone(&main_focused),
     };
 
     tauri::Builder::default()
@@ -512,7 +547,7 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // Tray
-            if let Err(e) = os_integration::setup_tray(&handle) {
+            if let Err(e) = os_integration::setup_tray(&handle, show_floating) {
                 log::warn!("Tray setup failed: {e}");
             }
 
@@ -521,16 +556,25 @@ pub fn run() {
                 log::warn!("Floating window creation failed: {e}");
             }
 
-            // Intercept main window close: hide to tray instead of destroying
+            // Intercept main window close: hide to tray instead of destroying.
+            // Also track focus so the floating button doesn't appear when user selects
+            // text inside the main DeepM window.
             {
                 let h = handle.clone();
+                let focused_flag = Arc::clone(&main_focused);
                 if let Some(main_win) = handle.get_webview_window("main") {
                     main_win.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                            api.prevent_close();
-                            if let Some(w) = h.get_webview_window("main") {
-                                let _ = w.hide();
+                        match event {
+                            tauri::WindowEvent::CloseRequested { api, .. } => {
+                                api.prevent_close();
+                                if let Some(w) = h.get_webview_window("main") {
+                                    let _ = w.hide();
+                                }
                             }
+                            tauri::WindowEvent::Focused(is_focused) => {
+                                focused_flag.store(*is_focused, Ordering::Relaxed);
+                            }
+                            _ => {}
                         }
                     });
                 }
@@ -610,21 +654,51 @@ pub fn run() {
                 });
             }
 
-            // mouse_selection_released: wait ~1 s, copy selection, show floating button
+            // mouse_selection_released: decide whether to show/hide floating button.
+            // Payload now contains: { has_selection: bool, x: f64, y: f64 }
             {
                 let h = handle.clone();
                 handle.listen("mouse_selection_released", move |event| {
-                    let had_drag = serde_json::from_str::<serde_json::Value>(event.payload())
-                        .ok()
-                        .and_then(|v| v["had_drag"].as_bool())
+                    let payload = serde_json::from_str::<serde_json::Value>(event.payload()).ok();
+                    let has_selection = payload.as_ref()
+                        .and_then(|v| v["has_selection"].as_bool())
                         .unwrap_or(false);
+                    let click_x = payload.as_ref()
+                        .and_then(|v| v["x"].as_f64())
+                        .unwrap_or(0.0);
+                    let click_y = payload.as_ref()
+                        .and_then(|v| v["y"].as_f64())
+                        .unwrap_or(0.0);
 
                     let h = h.clone();
                     tauri::async_runtime::spawn(async move {
-                        if !had_drag {
-                            os_integration::hide_floating(&h);
+                        if !has_selection {
+                            // Check if the click landed inside the floating window.
+                            // If yes, the user is interacting with the button — don't hide.
+                            let on_floating = h.get_webview_window("floating").map_or(false, |fw| {
+                                let visible = fw.is_visible().unwrap_or(false);
+                                if !visible { return false; }
+                                match (fw.outer_position(), fw.outer_size()) {
+                                    (Ok(pos), Ok(sz)) => {
+                                        let fx = pos.x as f64;
+                                        let fy = pos.y as f64;
+                                        click_x >= fx && click_x <= fx + sz.width as f64
+                                            && click_y >= fy && click_y <= fy + sz.height as f64
+                                    }
+                                    _ => false,
+                                }
+                            });
+
+                            if !on_floating {
+                                os_integration::hide_floating(&h);
+                            }
                             return;
                         }
+
+                        // Skip if user is working inside the main DeepM window
+                        let is_focused = h.state::<AppState>()
+                            .main_window_focused.load(Ordering::Relaxed);
+                        if is_focused { return; }
 
                         let enabled = *h.state::<AppState>().floating_enabled.lock().await;
                         if !enabled { return; }
@@ -632,11 +706,9 @@ pub fn run() {
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
 
-                        // Wait first — don't interfere with the selection while the user is still
-                        // making up their mind. Selection stays alive until the user clicks elsewhere.
+                        // Wait ~1 s: let the user finish their selection before Ctrl+C
                         tokio::time::sleep(tokio::time::Duration::from_millis(950)).await;
 
-                        // Simulate Ctrl+C to copy the still-selected text (saves/restores clipboard).
                         let copy_result = tokio::task::spawn_blocking(
                             os_integration::copy_selection_to_clipboard
                         ).await;
@@ -701,6 +773,8 @@ pub fn run() {
             set_autostart,
             get_autostart,
             restart_engine,
+            list_downloaded_models,
+            delete_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DeepM");

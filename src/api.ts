@@ -12,6 +12,7 @@ export type TranslateArgs = {
   target_lang: string;
   context?: string;
   glossary_entries?: { source: string; target: string }[];
+  formatted?: boolean;
 };
 
 export type TranslateResult = {
@@ -26,6 +27,7 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
     targetLang: args.target_lang,
     context: args.context,
     glossaryEntries: args.glossary_entries,
+    formatted: args.formatted ?? false,
   });
 }
 
@@ -83,4 +85,12 @@ export function onModelError(callback: (msg: string) => void) {
 
 export async function restartEngine(): Promise<void> {
   return invoke("restart_engine");
+}
+
+export async function listDownloadedModels(): Promise<[string, string][]> {
+  return invoke("list_downloaded_models");
+}
+
+export async function deleteModel(size: string, quantization: string): Promise<void> {
+  return invoke("delete_model", { size, quantization });
 }

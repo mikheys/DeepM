@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from "react";
 import type { AppSettings, GlossaryEntry } from "../types";
+import type { Locale } from "../i18n";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import { getSettings, saveSettings } from "../api";
+import { useI18n } from "../i18n-context";
 import "./SettingsPanel.css";
 
 type Props = {
   onClose?: () => void;
+  locale: Locale;
+  onLocaleChange: (l: Locale) => void;
 };
 
-export default function SettingsPanel({ onClose }: Props) {
+export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props) {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const [newGlossarySource, setNewGlossarySource] = useState("");
@@ -50,20 +55,21 @@ export default function SettingsPanel({ onClose }: Props) {
 
   const handleSave = async () => {
     if (!settings) return;
-    await saveSettings(settings);
+    const toSave = { ...settings, locale };
+    await saveSettings(toSave);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  if (!settings) return <div className="settings-loading">Loading settings…</div>;
+  if (!settings) return <div className="settings-loading">{t.loading}</div>;
 
   return (
     <div className="settings-panel">
       <div className="settings-content">
         <section className="settings-section">
-          <h2 className="settings-section-title">Translation</h2>
+          <h2 className="settings-section-title">{t.settings_translation}</h2>
           <div className="settings-row">
-            <label>Default source language</label>
+            <label>{t.settings_default_source}</label>
             <select
               value={settings.default_source_lang}
               onChange={(e) => update("default_source_lang", e.target.value)}
@@ -74,7 +80,7 @@ export default function SettingsPanel({ onClose }: Props) {
             </select>
           </div>
           <div className="settings-row">
-            <label>Default target language</label>
+            <label>{t.settings_default_target}</label>
             <select
               value={settings.default_target_lang}
               onChange={(e) => update("default_target_lang", e.target.value)}
@@ -85,50 +91,23 @@ export default function SettingsPanel({ onClose }: Props) {
             </select>
           </div>
           <div className="settings-row">
-            <label>GPU acceleration</label>
+            <label>{t.settings_gpu}</label>
             <input
               type="checkbox"
               checked={settings.use_gpu}
               onChange={(e) => update("use_gpu", e.target.checked)}
             />
-            <span className="settings-hint">Use CUDA if available</span>
+            <span className="settings-hint">{t.settings_gpu_hint}</span>
           </div>
         </section>
 
         <section className="settings-section">
-          <h2 className="settings-section-title">Model</h2>
-          <div className="settings-row">
-            <label>Model size</label>
-            <select
-              value={settings.model_size}
-              onChange={(e) => update("model_size", e.target.value as any)}
-            >
-              <option value="1.8B">HY-MT1.5-1.8B</option>
-              <option value="7B">HY-MT1.5-7B</option>
-            </select>
-          </div>
-          <div className="settings-row">
-            <label>Quantization</label>
-            <select
-              value={settings.quantization}
-              onChange={(e) => update("quantization", e.target.value as any)}
-            >
-              <option value="Q4_K_M">Q4_K_M (recommended)</option>
-              <option value="Q6_K">Q6_K</option>
-              <option value="Q8_0">Q8_0</option>
-            </select>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h2 className="settings-section-title">Glossary</h2>
-          <p className="settings-desc">
-            Terms here are passed to the model via terminology intervention.
-          </p>
+          <h2 className="settings-section-title">{t.settings_glossary}</h2>
+          <p className="settings-desc">{t.settings_glossary_desc}</p>
           <div className="glossary-add-row">
             <input
               type="text"
-              placeholder="Source term"
+              placeholder={t.settings_source_term}
               value={newGlossarySource}
               onChange={(e) => setNewGlossarySource(e.target.value)}
               className="glossary-input"
@@ -136,7 +115,7 @@ export default function SettingsPanel({ onClose }: Props) {
             <span className="glossary-arrow">→</span>
             <input
               type="text"
-              placeholder="Translation"
+              placeholder={t.settings_translation_term}
               value={newGlossaryTarget}
               onChange={(e) => setNewGlossaryTarget(e.target.value)}
               className="glossary-input"
@@ -151,7 +130,7 @@ export default function SettingsPanel({ onClose }: Props) {
               <option value="en->ru">EN→RU</option>
               <option value="ru->en">RU→EN</option>
             </select>
-            <button className="btn-add" onClick={addGlossaryEntry}>Add</button>
+            <button className="btn-add" onClick={addGlossaryEntry}>{t.settings_add}</button>
           </div>
           {settings.glossary.length > 0 && (
             <div className="glossary-list">
@@ -174,12 +153,9 @@ export default function SettingsPanel({ onClose }: Props) {
         </section>
 
         <section className="settings-section">
-          <h2 className="settings-section-title">Hotkeys</h2>
-          <p className="settings-desc settings-note">
-            Hotkey customization will be active in Stage 2. These values are saved and will be used.
-          </p>
+          <h2 className="settings-section-title">{t.settings_hotkeys}</h2>
           <div className="settings-row">
-            <label>Triple-copy trigger</label>
+            <label>{t.settings_triple_copy}</label>
             <input
               type="text"
               className="hotkey-input"
@@ -188,7 +164,7 @@ export default function SettingsPanel({ onClose }: Props) {
             />
           </div>
           <div className="settings-row">
-            <label>Translate &amp; replace</label>
+            <label>{t.settings_translate_replace}</label>
             <input
               type="text"
               className="hotkey-input"
@@ -197,7 +173,7 @@ export default function SettingsPanel({ onClose }: Props) {
             />
           </div>
           <div className="settings-row">
-            <label>Triple-copy interval (ms)</label>
+            <label>{t.settings_triple_interval}</label>
             <input
               type="number"
               className="hotkey-input"
@@ -210,18 +186,18 @@ export default function SettingsPanel({ onClose }: Props) {
         </section>
 
         <section className="settings-section">
-          <h2 className="settings-section-title">Interface</h2>
+          <h2 className="settings-section-title">{t.settings_interface}</h2>
           <div className="settings-row">
-            <label>Show floating button</label>
+            <label>{t.settings_floating}</label>
             <input
               type="checkbox"
               checked={settings.show_floating_button}
               onChange={(e) => update("show_floating_button", e.target.checked)}
             />
-            <span className="settings-hint">Appears when text is selected</span>
+            <span className="settings-hint">{t.settings_floating_hint}</span>
           </div>
           <div className="settings-row">
-            <label>Start with Windows</label>
+            <label>{t.settings_autostart}</label>
             <input
               type="checkbox"
               checked={settings.autostart}
@@ -229,20 +205,30 @@ export default function SettingsPanel({ onClose }: Props) {
             />
           </div>
           <div className="settings-row">
-            <label>Start in tray</label>
+            <label>{t.settings_start_tray}</label>
             <input
               type="checkbox"
               checked={settings.start_in_tray}
               onChange={(e) => update("start_in_tray", e.target.checked)}
             />
           </div>
+          <div className="settings-row">
+            <label>{t.settings_locale}</label>
+            <select
+              value={locale}
+              onChange={(e) => onLocaleChange(e.target.value as Locale)}
+            >
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+            </select>
+          </div>
         </section>
       </div>
 
       <div className="settings-footer">
-        {saved && <span className="saved-indicator">Saved ✓</span>}
+        {saved && <span className="saved-indicator">{t.settings_saved}</span>}
         <button className="btn-primary" onClick={handleSave}>
-          Save settings
+          {t.settings_save}
         </button>
       </div>
     </div>

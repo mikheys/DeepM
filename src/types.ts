@@ -6,10 +6,11 @@ export type Language = {
 
 export const LANGUAGES: Language[] = [
   { code: "auto", name: "Auto-detect", nativeName: "Auto" },
+  { code: "en", name: "English", nativeName: "English" },
+  { code: "ru", name: "Russian", nativeName: "Русский" },
   { code: "zh", name: "Chinese (Simplified)", nativeName: "中文(简体)" },
   { code: "zh-TW", name: "Chinese (Traditional)", nativeName: "中文(繁體)" },
   { code: "yue", name: "Cantonese", nativeName: "粤语" },
-  { code: "en", name: "English", nativeName: "English" },
   { code: "fr", name: "French", nativeName: "Français" },
   { code: "de", name: "German", nativeName: "Deutsch" },
   { code: "es", name: "Spanish", nativeName: "Español" },
@@ -18,7 +19,6 @@ export const LANGUAGES: Language[] = [
   { code: "nl", name: "Dutch", nativeName: "Nederlands" },
   { code: "pl", name: "Polish", nativeName: "Polski" },
   { code: "cs", name: "Czech", nativeName: "Čeština" },
-  { code: "ru", name: "Russian", nativeName: "Русский" },
   { code: "uk", name: "Ukrainian", nativeName: "Українська" },
   { code: "ja", name: "Japanese", nativeName: "日本語" },
   { code: "ko", name: "Korean", nativeName: "한국어" },
@@ -101,6 +101,7 @@ export type AppSettings = {
   autostart: boolean;
   start_in_tray: boolean;
   triple_copy_interval_ms: number;
+  locale: string;
 };
 
 export type AppView = "translator" | "settings" | "history" | "model_manager" | "onboarding";

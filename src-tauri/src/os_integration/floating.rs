@@ -25,7 +25,7 @@ pub fn create_floating_window(app: &AppHandle) -> Result<()> {
     .skip_taskbar(true)
     .visible(false)
     .transparent(true)
-    .shadow(true)
+    .shadow(false)
     .build()
     .map_err(|e| anyhow::anyhow!("floating window build error: {e}"))?;
 
@@ -46,10 +46,6 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
 
     let px = (x + offset_x) as i32;
     let py = (y + offset_y) as i32;
-
-    // Clamp to positive (simple guard; monitor bounds handling is in Stage 3 design pass)
-    let px = px.max(0);
-    let py = py.max(0);
 
     win.set_position(tauri::PhysicalPosition::new(px, py))
         .map_err(|e| anyhow::anyhow!("{e}"))?;

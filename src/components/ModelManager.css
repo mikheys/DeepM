@@ -314,3 +314,121 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Variant grid */
+.variant-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.variant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition);
+}
+
+.variant-row.variant-active {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-bg-secondary));
+}
+
+.variant-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.variant-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+
+.variant-size {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.variant-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.variant-loaded-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-success);
+}
+
+.variant-downloading {
+  font-size: 12px;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  min-width: 36px;
+  text-align: right;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  transition: background var(--transition), opacity var(--transition);
+}
+
+.btn-small:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-download {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.btn-download:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.btn-load {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btn-load:hover:not(:disabled) {
+  background: var(--color-accent-light);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btn-delete {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  width: 26px;
+  padding: 4px 0;
+  text-align: center;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-delete:hover:not(:disabled) {
+    background: #3b0d0d;
+    border-color: #f87171;
+    color: #f87171;
+  }
+}

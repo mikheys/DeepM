@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import { Languages, History, Package, Settings } from "lucide-react";
 import type { AppView, TranslationHistoryEntry } from "./types";
+import type { Locale } from "./i18n";
+import { I18nProvider, useI18n } from "./i18n-context";
 import TranslatorPanel from "./components/TranslatorPanel";
 import ModelManager from "./components/ModelManager";
 import HistoryPanel from "./components/HistoryPanel";
@@ -17,10 +20,33 @@ export default function App() {
   if (isFloatingWindow) {
     return <FloatingButton />;
   }
+
+  return (
+    <I18nProvider initial="en">
+      <MainAppWithLocale />
+    </I18nProvider>
+  );
+}
+
+function MainAppWithLocale() {
+  const { setLocale } = useI18n();
+  const [localeReady, setLocaleReady] = useState(false);
+
+  useEffect(() => {
+    getSettings().then((s) => {
+      if (s.locale === "ru" || s.locale === "en") {
+        setLocale(s.locale as Locale);
+      }
+      setLocaleReady(true);
+    }).catch(() => setLocaleReady(true));
+  }, []);
+
+  if (!localeReady) return null;
   return <MainApp />;
 }
 
 function MainApp() {
+  const { t, locale, setLocale } = useI18n();
   const [view, setView] = useState<AppView>("onboarding");
   const [modelReady, setModelReady] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<TranslationHistoryEntry | null>(null);
@@ -48,19 +74,16 @@ function MainApp() {
   useEffect(() => {
     const subs: Promise<() => void>[] = [];
 
-    // Model events
     subs.push(listen("model_ready", () => {
       setModelReady(true);
       if (view === "onboarding" || view === "model_manager") setView("translator");
     }));
 
-    // Triple-copy: receive text from hook, inject into translator
     subs.push(listen<{ text: string }>("insert_text", (e) => {
       setView("translator");
       setInjectedText(e.payload.text);
     }));
 
-    // Translate-replace: visual feedback overlay
     subs.push(listen("translate_replace_started", () => {
       setTranslateReplaceActive(true);
     }));
@@ -71,7 +94,6 @@ function MainApp() {
     return () => { subs.forEach((p) => p.then((f) => f())); };
   }, [view]);
 
-  // Trigger translate-and-replace from hotkey event (fired in lib.rs via rdev)
   useEffect(() => {
     const sub = listen("hotkey_translate_replace", () => {
       if (!modelReady) return;
@@ -93,14 +115,6 @@ function MainApp() {
     setView("translator");
   };
 
-  const handleTranslated = (
-    sourceLang: string, targetLang: string,
-    sourceText: string, translatedText: string
-  ) => {
-    // History is persisted by the Rust backend; no local state needed here.
-  };
-
-  // Clear injected text after panel consumes it
   const handleInjectedConsumed = () => setInjectedText(undefined);
 
   return (
@@ -108,22 +122,21 @@ function MainApp() {
       <nav className="sidebar">
         <div className="sidebar-logo">DeepM</div>
         <div className="sidebar-nav">
-          <NavBtn active={view === "translator"} onClick={() => setView("translator")} icon="⇄" label="Translate" />
-          <NavBtn active={view === "history"} onClick={() => setView("history")} icon="⏱" label="History" />
-          <NavBtn active={view === "model_manager"} onClick={() => setView("model_manager")} icon="⬇" label="Model" />
-          <NavBtn active={view === "settings"} onClick={() => setView("settings")} icon="⚙" label="Settings" />
+          <NavBtn active={view === "translator"} onClick={() => setView("translator")} icon={<Languages size={20} />} label={t.nav_translate} />
+          <NavBtn active={view === "history"} onClick={() => setView("history")} icon={<History size={20} />} label={t.nav_history} />
+          <NavBtn active={view === "model_manager"} onClick={() => setView("model_manager")} icon={<Package size={20} />} label={t.nav_model} />
+          <NavBtn active={view === "settings"} onClick={() => setView("settings")} icon={<Settings size={20} />} label={t.nav_settings} />
         </div>
         <div className="sidebar-bottom">
           <div className={`model-status-dot ${modelReady ? "ready" : "not-ready"}`} />
-          <span className="model-status-label">{modelReady ? "Model ready" : "No model"}</span>
+          <span className="model-status-label">{modelReady ? t.model_ready : t.no_model}</span>
         </div>
       </nav>
 
       <main className="main-content">
-        {/* Translate-replace activity indicator */}
         {translateReplaceActive && (
           <div className="translate-replace-banner">
-            <span className="tr-spinner" /> Translating in place…
+            <span className="tr-spinner" /> {t.translating_in_place}
           </div>
         )}
 
@@ -131,7 +144,6 @@ function MainApp() {
         {view === "translator" && (
           <TranslatorPanel
             glossaryEntries={glossary}
-            onTranslated={handleTranslated}
             initialText={injectedText ?? historyEntry?.source_text}
             onInitialTextConsumed={handleInjectedConsumed}
             defaultSourceLang={defaultSourceLang}
@@ -140,14 +152,20 @@ function MainApp() {
         )}
         {view === "history" && <HistoryPanel onSelect={handleHistorySelect} />}
         {view === "model_manager" && <ModelManager onModelReady={handleModelReady} />}
-        {view === "settings" && <SettingsPanel onClose={() => setView("translator")} />}
+        {view === "settings" && (
+          <SettingsPanel
+            onClose={() => setView("translator")}
+            locale={locale}
+            onLocaleChange={(l) => setLocale(l)}
+          />
+        )}
       </main>
     </div>
   );
 }
 
 function NavBtn({ active, onClick, icon, label }: {
-  active: boolean; onClick: () => void; icon: string; label: string;
+  active: boolean; onClick: () => void; icon: React.ReactNode; label: string;
 }) {
   return (
     <button className={`nav-btn ${active ? "active" : ""}`} onClick={onClick} title={label}>

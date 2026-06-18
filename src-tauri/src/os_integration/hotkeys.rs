@@ -2,21 +2,23 @@ use anyhow::Result;
 use rdev::{listen, Event, EventType, Key, Button};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-const DRAG_THRESHOLD_PX: f64 = 12.0;
+const DRAG_THRESHOLD_PX: f64 = 8.0;
+const MULTI_CLICK_MS: u64 = 450;
+const MULTI_CLICK_RADIUS_PX: f64 = 5.0;
 
-/// Internal state shared across the rdev callback (must be Send).
 struct HookState {
     held_keys: HashSet<Key>,
     c_press_times: Vec<Instant>,
     interval_ms: u64,
-    /// Last known cursor position (updated on every MouseMove).
     last_pos: (f64, f64),
-    /// Cursor position when left button was pressed.
     mouse_down_pos: Option<(f64, f64)>,
+    /// Tracks consecutive quick clicks to detect double/triple click word selection.
+    last_click_time: Option<Instant>,
+    last_click_pos: (f64, f64),
 }
 
 impl HookState {
@@ -27,6 +29,8 @@ impl HookState {
             interval_ms,
             last_pos: (0.0, 0.0),
             mouse_down_pos: None,
+            last_click_time: None,
+            last_click_pos: (0.0, 0.0),
         }
     }
 
@@ -40,10 +44,9 @@ impl HookState {
             || self.held_keys.contains(&Key::ShiftRight)
     }
 
-    /// Push a C press and check if triple occurred within interval.
     fn record_c_press(&mut self) -> bool {
         let now = Instant::now();
-        let window = std::time::Duration::from_millis(self.interval_ms);
+        let window = Duration::from_millis(self.interval_ms);
         self.c_press_times.retain(|t| now.duration_since(*t) <= window);
         self.c_press_times.push(now);
         if self.c_press_times.len() >= 3 {
@@ -72,13 +75,22 @@ impl HookState {
         };
         ctrl_ok && shift_ok && key_ok
     }
+
+    /// Returns true if this release is a multi-click (double/triple) at the same position.
+    fn detect_multi_click(&mut self, x: f64, y: f64) -> bool {
+        let now = Instant::now();
+        let is_multi = self.last_click_time.map_or(false, |t| {
+            let time_ok = now.duration_since(t) < Duration::from_millis(MULTI_CLICK_MS);
+            let (lx, ly) = self.last_click_pos;
+            let dist = ((x - lx).powi(2) + (y - ly).powi(2)).sqrt();
+            time_ok && dist < MULTI_CLICK_RADIUS_PX
+        });
+        self.last_click_time = Some(now);
+        self.last_click_pos = (x, y);
+        is_multi
+    }
 }
 
-/// Spawns the global keyboard/mouse hook on a dedicated OS thread.
-/// Events are forwarded to the Tauri app via `app.emit()`.
-///
-/// `translate_replace_hotkey`: e.g. "Ctrl+Shift+T"
-/// `triple_copy_interval_ms`: max ms between consecutive C presses
 pub fn spawn_hook(
     app: AppHandle,
     translate_replace_hotkey: String,
@@ -101,46 +113,46 @@ pub fn spawn_hook(
                     };
 
                     match event.event_type {
-                        // ── Key tracking ───────────────────────────────────
                         EventType::KeyPress(key) => {
                             st.held_keys.insert(key.clone());
 
-                            // Triple-C detection (Ctrl held + 3× C within interval)
                             if key == Key::KeyC && st.ctrl_held() {
                                 if st.record_c_press() {
                                     let _ = app.emit("hotkey_triple_copy", ());
-                                    log::debug!("triple-copy triggered");
                                 }
                             }
 
-                            // Translate-replace hotkey
                             if st.is_translate_replace_combo(&tr_hotkey) {
                                 let _ = app.emit("hotkey_translate_replace", ());
-                                log::debug!("translate-replace triggered");
                             }
                         }
                         EventType::KeyRelease(key) => {
                             st.held_keys.remove(&key);
-                            // Clear triple-C history when Ctrl is released
                             if key == Key::ControlLeft || key == Key::ControlRight {
                                 st.c_press_times.clear();
                             }
                         }
 
-                        // ── Mouse tracking for floating button ─────────────
                         EventType::ButtonPress(Button::Left) => {
-                            // Record position at press time (from last MouseMove)
                             st.mouse_down_pos = Some(st.last_pos);
                         }
                         EventType::ButtonRelease(Button::Left) => {
                             let (cx, cy) = st.last_pos;
+
                             let had_drag = st.mouse_down_pos.take().map_or(false, |(dx, dy)| {
                                 let dist = ((cx - dx).powi(2) + (cy - dy).powi(2)).sqrt();
                                 dist >= DRAG_THRESHOLD_PX
                             });
-                            // Always emit so lib.rs can hide the button on plain clicks
+
+                            // Detect double/triple click (word/line selection without dragging)
+                            let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
+
+                            let has_selection = had_drag || is_multi_click;
+
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
-                                "had_drag": had_drag,
+                                "has_selection": has_selection,
+                                "x": cx,
+                                "y": cy,
                             }));
                         }
                         EventType::MouseMove { x, y } => {
@@ -154,7 +166,7 @@ pub fn spawn_hook(
             };
 
             if let Err(e) = listen(callback) {
-                log::error!("rdev::listen error: {e:?}. Hotkeys and floating button will be unavailable.");
+                log::error!("rdev::listen error: {e:?}");
             }
         })
         .expect("failed to spawn hook thread");

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { TranslationHistoryEntry } from "../types";
 import { getHistory, clearHistory } from "../api";
 import { LANGUAGES } from "../types";
+import { useI18n } from "../i18n-context";
 import "./HistoryPanel.css";
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export default function HistoryPanel({ onSelect }: Props) {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<TranslationHistoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -23,7 +25,7 @@ export default function HistoryPanel({ onSelect }: Props) {
   useEffect(() => { load(); }, []);
 
   const handleClear = async () => {
-    if (!confirm("Clear all translation history?")) return;
+    if (!confirm(t.confirm_clear_history)) return;
     await clearHistory();
     setEntries([]);
   };
@@ -45,22 +47,22 @@ export default function HistoryPanel({ onSelect }: Props) {
         <input
           type="search"
           className="search-input"
-          placeholder="Search history…"
+          placeholder={t.search_placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         {entries.length > 0 && (
           <button className="btn-danger-sm" onClick={handleClear}>
-            Clear all
+            {t.clear_all}
           </button>
         )}
       </div>
 
       {loading ? (
-        <div className="history-empty">Loading…</div>
+        <div className="history-empty">{t.loading}</div>
       ) : filtered.length === 0 ? (
         <div className="history-empty">
-          {query ? "No matches found." : "No translation history yet."}
+          {query ? t.no_matches : t.no_history}
         </div>
       ) : (
         <div className="history-list">
