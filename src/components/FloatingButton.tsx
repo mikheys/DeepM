@@ -25,30 +25,28 @@ export default function FloatingButton() {
   const [translation, setTranslation] = useState("");
   const [uiState, setUiState] = useState<UIState>("idle");
   const [langLabel, setLangLabel] = useState("");
-  // Refs hold the latest translation params for retry (avoid stale closures)
-  const lastTextRef = useRef("");
-  const lastSrcRef = useRef("auto");
-  const lastTgtRef = useRef("en");
 
-  // Force the whole window transparent immediately — overrides global.css body background
+  // Refs hold the current text/lang so the click handler never has a stale closure.
+  const pendingTextRef = useRef("");
+  const pendingSrcRef  = useRef("auto");
+  const pendingTgtRef  = useRef("en");
+
+  // Force transparent background immediately — overrides global.css body rule.
   useEffect(() => {
-    const force = "background:transparent!important;";
-    document.documentElement.style.cssText += force;
-    document.body.style.cssText += force;
+    const t = "background:transparent!important;";
+    document.documentElement.style.cssText += t;
+    document.body.style.cssText += t;
     const root = document.getElementById("root");
-    if (root) root.style.cssText += force;
+    if (root) root.style.cssText += t;
   }, []);
 
   useEffect(() => {
     getSettings().catch(() => {});
   }, []);
 
-  // Translate directly — all params passed in, no React state needed (stale-closure safe)
+  // Translate using values from refs — stale-closure safe.
   const translateDirectly = async (txt: string, src: string, tgt: string) => {
     if (!txt.trim()) return;
-    lastTextRef.current = txt;
-    lastSrcRef.current = src;
-    lastTgtRef.current = tgt;
     setUiState("loading");
     try {
       const result = await invoke<string>("quick_translate", {
@@ -70,16 +68,23 @@ export default function FloatingButton() {
     };
     window.addEventListener("keydown", onKey);
 
-    // floating_text → detect → auto-translate (no click needed)
+    // When text arrives: store it in refs for the click handler.
+    // Do NOT auto-translate — user must click the button.
     const unsubText = listen<{ text: string }>("floating_text", async (e) => {
       const incoming = e.payload.text;
+
+      // Store text immediately so click handler has it right away.
+      pendingTextRef.current = incoming;
+      pendingSrcRef.current  = "auto";
+
       setTranslation("");
       setUiState("idle");
 
+      // Detect target lang in background; update refs and label when ready.
       const detected = await detectLang(incoming);
       const tgt = autoTarget(detected);
+      pendingTgtRef.current = tgt;
       setLangLabel(`${detected.toUpperCase()} → ${tgt.toUpperCase()}`);
-      await translateDirectly(incoming, "auto", tgt);
     });
 
     return () => {
@@ -93,10 +98,25 @@ export default function FloatingButton() {
     setUiState("idle");
     setTranslation("");
     setLangLabel("");
+    pendingTextRef.current = "";
+  };
+
+  // Click logic:
+  //   idle → translate (the whole point of the button)
+  //   loading → ignore (wait for result)
+  //   result / error → dismiss
+  const handleBtnClick = () => {
+    if (uiState === "idle") {
+      translateDirectly(pendingTextRef.current, pendingSrcRef.current, pendingTgtRef.current);
+    } else if (uiState === "loading") {
+      // do nothing — let the translation finish
+    } else {
+      doHide();
+    }
   };
 
   const doRetry = () => {
-    translateDirectly(lastTextRef.current, lastSrcRef.current, lastTgtRef.current);
+    translateDirectly(pendingTextRef.current, pendingSrcRef.current, pendingTgtRef.current);
   };
 
   const handleCopy = () => {
@@ -108,12 +128,13 @@ export default function FloatingButton() {
 
   return (
     <div className="fb-root">
-      {/* Button row — always at top, 52×52, transparent around it */}
-      <div className="fb-btn-wrap" onClick={doHide} title="Close">
-        <button
-          className={`fb-btn ${uiState === "loading" ? "fb-btn-loading" : ""}`}
-          tabIndex={-1}
-        >
+      {/* Button — 52×52, always visible at top of window */}
+      <div
+        className={`fb-btn-wrap ${uiState === "loading" ? "fb-btn-wrap-loading" : ""}`}
+        onClick={handleBtnClick}
+        title={uiState === "idle" ? "Translate" : uiState === "loading" ? "Translating…" : "Close"}
+      >
+        <button className="fb-btn" tabIndex={-1}>
           {uiState === "loading" ? (
             <span className="fb-spinner" />
           ) : (
@@ -122,7 +143,7 @@ export default function FloatingButton() {
         </button>
       </div>
 
-      {/* Popup card — appears below when expanded */}
+      {/* Popup card — appears below button when expanded */}
       <div className={`fb-card-wrap ${isExpanded ? "fb-card-visible" : ""}`}>
         <div className={`fb-card ${uiState === "error" ? "fb-card-error" : ""}`}>
           <div className="fb-card-header">

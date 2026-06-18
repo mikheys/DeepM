@@ -461,18 +461,44 @@ async fn restart_engine(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let settings = state.settings.lock().await;
-    let model_dir = settings.model_path.clone();
-    let size = settings.model_size.clone();
-    let quant = settings.quantization.clone();
-    drop(settings);
+    let (model_dir, settings_size, settings_quant) = {
+        let s = state.settings.lock().await;
+        (s.model_path.clone(), s.model_size.clone(), s.quantization.clone())
+    };
 
-    let path = std::path::PathBuf::from(&model_dir)
-        .join(format!("HY-MT1.5-{}-{}.gguf", size, quant));
+    // Try the model configured in settings first; if that file doesn't exist
+    // (e.g. because a fallback model was loaded at startup), try whatever model
+    // is currently known to the model manager, then any downloaded model.
+    let path = {
+        let primary = PathBuf::from(&model_dir)
+            .join(format!("HY-MT1.5-{}-{}.gguf", settings_size, settings_quant));
+        if primary.exists() {
+            primary
+        } else {
+            // Try the model that was actually loaded (fallback spec)
+            let current = state.model_manager.current_spec.lock().await;
+            let spec_path = current.as_ref().map(|s| {
+                PathBuf::from(&model_dir).join(format!("HY-MT1.5-{}-{}.gguf", s.size, s.quantization))
+            });
+            drop(current);
 
-    if !path.exists() {
-        return Err("Model file not found — please download the model first.".into());
-    }
+            if let Some(p) = spec_path.filter(|p| p.exists()) {
+                p
+            } else {
+                // Last resort: pick any downloaded model
+                let found = state.model_manager.list_downloaded(&model_dir)
+                    .into_iter()
+                    .find_map(|(s, q)| {
+                        let p = PathBuf::from(&model_dir).join(format!("HY-MT1.5-{}-{}.gguf", s, q));
+                        p.exists().then_some(p)
+                    });
+                match found {
+                    Some(p) => p,
+                    None => return Err("Модель не найдена — скачайте модель в менеджере моделей.".into()),
+                }
+            }
+        }
+    };
 
     match state.engine.start(path).await {
         Ok(()) => {
