@@ -8,6 +8,9 @@ pub use clipboard_util::{
     copy_selection_to_clipboard, get_selected_text, paste_from_clipboard, read_clipboard,
     save_clipboard, write_clipboard,
 };
-pub use floating::{create_floating_window, hide_floating, is_floating_visible, show_floating};
+pub use floating::{
+    create_floating_window, hide_floating, is_floating_visible, set_floating_expanded,
+    show_floating,
+};
 pub use hotkeys::spawn_hook;
 pub use tray::setup_tray;

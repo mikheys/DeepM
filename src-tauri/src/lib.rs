@@ -425,6 +425,12 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Resize the floating window to show/hide the translation card.
+#[tauri::command]
+async fn set_floating_expanded(expanded: bool, app: AppHandle) -> Result<(), String> {
+    os_integration::set_floating_expanded(&app, expanded).map_err(|e| e.to_string())
+}
+
 // ── Model file management commands ───────────────────────────────────────────
 
 #[tauri::command]
@@ -731,26 +737,25 @@ pub fn run() {
                     let h = h.clone();
                     tauri::async_runtime::spawn(async move {
                         if !has_selection {
-                            // Check if the click landed inside the floating button (52×52 at
-                            // window top-left).  If so, the user is clicking the button itself
-                            // — React handles it; we must not hide from Rust.
-                            let on_button = h.get_webview_window("floating").map_or(false, |fw| {
+                            // Did the click land inside the floating window (button or card)?
+                            // If so, the user is interacting with it — React handles the click,
+                            // we must not hide. The window is now sized tightly to its content,
+                            // so this rect closely matches the visible button/card.
+                            let on_floating = h.get_webview_window("floating").map_or(false, |fw| {
                                 let visible = fw.is_visible().unwrap_or(false);
                                 if !visible { return false; }
-                                match fw.outer_position() {
-                                    Ok(pos) => {
+                                match (fw.outer_position(), fw.outer_size()) {
+                                    (Ok(pos), Ok(sz)) => {
                                         let fx = pos.x as f64;
                                         let fy = pos.y as f64;
-                                        // Only protect the 60×60 button hitbox, not the whole
-                                        // 300×218 window (rest is transparent / pointer-events:none).
-                                        click_x >= fx && click_x <= fx + 60.0
-                                            && click_y >= fy && click_y <= fy + 60.0
+                                        click_x >= fx && click_x <= fx + sz.width as f64
+                                            && click_y >= fy && click_y <= fy + sz.height as f64
                                     }
                                     _ => false,
                                 }
                             });
 
-                            if !on_button {
+                            if !on_floating {
                                 os_integration::hide_floating(&h);
                             }
                             return;
@@ -823,6 +828,7 @@ pub fn run() {
             set_floating_enabled,
             check_and_show_floating,
             hide_floating_button,
+            set_floating_expanded,
             set_autostart,
             get_autostart,
             restart_engine,

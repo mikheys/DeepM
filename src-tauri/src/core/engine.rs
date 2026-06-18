@@ -62,7 +62,11 @@ pub struct LlamaServerProcess {
 
 impl Drop for LlamaServerProcess {
     fn drop(&mut self) {
+        // Kill AND reap the process so its TCP port (28473) is released before a
+        // new server is started during a restart. Without wait(), the old process
+        // may still hold the port when the new one tries to bind it.
         let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -84,62 +88,69 @@ impl TranslationEngine {
     }
 
     pub async fn start(&self, model_path: PathBuf) -> Result<()> {
-        let mut proc = self.server_process.lock().await;
-
-        // Kill existing server if running
-        *proc = None;
-
         let llama_server = llama_server_binary_path()?;
 
         log::info!("Starting llama-server: {}", llama_server.display());
         log::info!("Model: {}", model_path.display());
 
-        let mut cmd = Command::new(&llama_server);
-        cmd.arg("--model").arg(&model_path)
-           .arg("--port").arg(LLAMA_SERVER_PORT.to_string())
-           .arg("--ctx-size").arg("4096")
-           .arg("--threads").arg(num_cpus().to_string())
-           .stdout(Stdio::null())
-           .stderr(Stdio::piped());
+        // Spawn the server inside a scoped lock, then RELEASE the lock before
+        // waiting for readiness. wait_for_server_ready() locks server_process
+        // itself (to poll the child for early exit); holding the lock across that
+        // call would deadlock (tokio::Mutex is not reentrant).
+        let stderr_ref = {
+            let mut proc = self.server_process.lock().await;
 
-        if self.use_gpu {
-            cmd.arg("--n-gpu-layers").arg("99");
-        }
+            // Kill+reap any existing server (Drop waits on it, freeing the port).
+            *proc = None;
 
-        let mut child = cmd.spawn()
-            .map_err(|e| anyhow!(
-                "Failed to launch llama-server.exe: {e}.\n\
-                Make sure llama-server.exe AND all companion DLLs (cublas64_12.dll, \
-                cudart64_12.dll, ggml-cuda.dll, etc.) are in src-tauri\\binaries\\."
-            ))?;
+            let mut cmd = Command::new(&llama_server);
+            cmd.arg("--model").arg(&model_path)
+               .arg("--port").arg(LLAMA_SERVER_PORT.to_string())
+               .arg("--ctx-size").arg("4096")
+               .arg("--threads").arg(num_cpus().to_string())
+               .stdout(Stdio::null())
+               .stderr(Stdio::piped());
 
-        // Capture stderr on a sync thread (std::sync::Mutex — safe from async context too)
-        let stderr_output: Arc<StdMutex<String>> = Arc::new(StdMutex::new(String::new()));
-        if let Some(stderr) = child.stderr.take() {
-            let buf = Arc::clone(&stderr_output);
-            std::thread::spawn(move || {
-                use std::io::{BufRead, BufReader};
-                let reader = BufReader::new(stderr);
-                let mut out = String::new();
-                for line in reader.lines().flatten() {
-                    log::debug!("[llama-server] {line}");
-                    out.push_str(&line);
-                    out.push('\n');
-                    if out.len() > 4096 { break; }
-                }
-                if let Ok(mut g) = buf.lock() { *g = out; }
-            });
-        }
+            if self.use_gpu {
+                cmd.arg("--n-gpu-layers").arg("99");
+            }
 
-        *proc = Some(LlamaServerProcess { child });
-        let stderr_ref = Arc::clone(&stderr_output);
+            let mut child = cmd.spawn()
+                .map_err(|e| anyhow!(
+                    "Failed to launch llama-server.exe: {e}.\n\
+                    Make sure llama-server.exe AND all companion DLLs (cublas64_12.dll, \
+                    cudart64_12.dll, ggml-cuda.dll, etc.) are in src-tauri\\binaries\\."
+                ))?;
+
+            // Capture stderr on a sync thread (std::sync::Mutex — safe from async context too)
+            let stderr_output: Arc<StdMutex<String>> = Arc::new(StdMutex::new(String::new()));
+            if let Some(stderr) = child.stderr.take() {
+                let buf = Arc::clone(&stderr_output);
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stderr);
+                    let mut out = String::new();
+                    for line in reader.lines().flatten() {
+                        log::debug!("[llama-server] {line}");
+                        out.push_str(&line);
+                        out.push('\n');
+                        if out.len() > 4096 { break; }
+                    }
+                    if let Ok(mut g) = buf.lock() { *g = out; }
+                });
+            }
+
+            *proc = Some(LlamaServerProcess { child });
+            stderr_output
+            // proc lock guard dropped here
+        };
 
         {
             let mut mp = self.model_path.lock().await;
             *mp = Some(model_path);
         }
 
-        // Wait for server to become ready
+        // Wait for server to become ready (lock is free now — no deadlock)
         self.wait_for_server_ready(stderr_ref).await?;
         Ok(())
     }

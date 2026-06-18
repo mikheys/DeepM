@@ -15,26 +15,23 @@ async function detectLang(text: string): Promise<string> {
 }
 
 function autoTarget(detected: string): string {
-  if (detected === "ru") return "en";
-  return "ru";
+  return detected === "ru" ? "en" : "ru";
 }
 
 export default function FloatingButton() {
   const [uiState, setUiState] = useState<UIState>("idle");
   const [translation, setTranslation] = useState("");
   const [langLabel, setLangLabel] = useState("");
-  // visible controls whether the button is rendered at all (pointer-events etc)
   const [visible, setVisible] = useState(false);
 
-  // Refs keep current values for use inside event listener callbacks (no stale closures)
+  // Refs hold current values for use inside event-listener callbacks (no stale closures).
   const pendingTextRef = useRef("");
   const pendingTgtRef  = useRef("ru");
   const uiStateRef     = useRef<UIState>("idle");
 
-  // Keep ref in sync with state
   useEffect(() => { uiStateRef.current = uiState; }, [uiState]);
 
-  // Force transparent background immediately — overrides global.css body rule.
+  // Force the document background fully transparent (overrides global.css).
   useEffect(() => {
     const t = "background:transparent!important;";
     document.documentElement.style.cssText += t;
@@ -43,7 +40,13 @@ export default function FloatingButton() {
     if (root) root.style.cssText += t;
   }, []);
 
+  // Tell the Rust side to grow/shrink the OS window whenever we expand/collapse.
+  const setExpanded = (expanded: boolean) => {
+    invoke("set_floating_expanded", { expanded }).catch(() => {});
+  };
+
   const doHide = () => {
+    setExpanded(false);
     setVisible(false);
     setUiState("idle");
     setTranslation("");
@@ -63,30 +66,31 @@ export default function FloatingButton() {
       });
       setTranslation(result);
       setUiState("result");
+      setExpanded(true); // grow the window to reveal the card
     } catch (e) {
       setTranslation(String(e));
       setUiState("error");
+      setExpanded(true);
     }
   };
 
   useEffect(() => {
-    // Escape key dismisses the button
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") doHide();
     };
     window.addEventListener("keydown", onKey);
 
-    // floating_text: new text arrived from selection
+    // New selection arrived: show the collapsed button, detect language in background.
     const unsubText = listen<{ text: string }>("floating_text", async (e) => {
       const incoming = e.payload.text;
       pendingTextRef.current = incoming;
-      pendingTgtRef.current  = "ru"; // default until detection finishes
+      pendingTgtRef.current  = "ru";
       setTranslation("");
       setLangLabel("");
       setUiState("idle");
+      setExpanded(false);
       setVisible(true);
 
-      // Detect language in background; update label + ref when done
       const detected = await detectLang(incoming);
       const tgt = autoTarget(detected);
       pendingTgtRef.current = tgt;
@@ -104,9 +108,8 @@ export default function FloatingButton() {
     if (state === "idle") {
       runTranslate(pendingTextRef.current, pendingTgtRef.current);
     } else if (state === "loading") {
-      // wait — do nothing
+      // ignore — wait for result
     } else {
-      // result or error: dismiss
       doHide();
     }
   };
@@ -116,22 +119,21 @@ export default function FloatingButton() {
     doHide();
   };
 
-  const handleRetry = () => {
-    runTranslate(pendingTextRef.current, pendingTgtRef.current);
-  };
+  const handleRetry = () => runTranslate(pendingTextRef.current, pendingTgtRef.current);
+
+  // Prevent the button/card from taking focus away from the source app.
+  const noFocus = (e: React.MouseEvent) => e.preventDefault();
 
   const isExpanded = uiState === "result" || uiState === "error";
 
-  if (!visible) {
-    // Render nothing when hidden — prevents transparent-window click-blocking
-    return <div className="fb-root" />;
-  }
+  if (!visible) return <div className="fb-root" />;
 
   return (
     <div className="fb-root">
-      {/* Circle translate button */}
+      {/* Round translate button, anchored top-left */}
       <div
         className={`fb-btn-wrap${uiState === "loading" ? " fb-btn-wrap-loading" : ""}`}
+        onMouseDown={noFocus}
         onClick={handleBtnClick}
         title={
           uiState === "idle"    ? "Перевести" :
@@ -141,39 +143,40 @@ export default function FloatingButton() {
         <div className="fb-btn">
           {uiState === "loading"
             ? <span className="fb-spinner" />
-            : <Languages size={22} strokeWidth={1.8} />
-          }
+            : <Languages size={22} strokeWidth={1.8} />}
         </div>
       </div>
 
-      {/* Translation card — slides in below button when expanded */}
-      <div className={`fb-card-wrap${isExpanded ? " fb-card-visible" : ""}`}>
-        <div className={`fb-card${uiState === "error" ? " fb-card-error" : ""}`}>
-          <div className="fb-card-header">
-            <span className="fb-lang-badge">{langLabel}</span>
-            <div className="fb-card-actions">
-              {uiState === "error" && (
-                <button className="fb-icon-btn" onClick={handleRetry} title="Повторить">
-                  <RotateCcw size={14} />
+      {/* Translation card */}
+      {isExpanded && (
+        <div className="fb-card-wrap" onMouseDown={noFocus}>
+          <div className={`fb-card${uiState === "error" ? " fb-card-error" : ""}`}>
+            <div className="fb-card-header">
+              <span className="fb-lang-badge">{langLabel}</span>
+              <div className="fb-card-actions">
+                {uiState === "error" && (
+                  <button className="fb-icon-btn" onClick={handleRetry} title="Повторить">
+                    <RotateCcw size={14} />
+                  </button>
+                )}
+                {uiState === "result" && (
+                  <button className="fb-icon-btn" onClick={handleCopy} title="Копировать">
+                    <Copy size={14} />
+                  </button>
+                )}
+                <button className="fb-icon-btn fb-close-btn" onClick={doHide} title="Закрыть">
+                  <X size={14} />
                 </button>
-              )}
-              {uiState === "result" && (
-                <button className="fb-icon-btn" onClick={handleCopy} title="Копировать">
-                  <Copy size={14} />
-                </button>
-              )}
-              <button className="fb-icon-btn fb-close-btn" onClick={doHide} title="Закрыть">
-                <X size={14} />
-              </button>
+              </div>
+            </div>
+            <div className="fb-card-body">
+              <p className={uiState === "error" ? "fb-text-error" : "fb-text-result"}>
+                {translation}
+              </p>
             </div>
           </div>
-          <div className="fb-card-body">
-            <p className={uiState === "error" ? "fb-text-error" : "fb-text-result"}>
-              {translation}
-            </p>
-          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
