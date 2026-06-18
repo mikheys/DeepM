@@ -7,6 +7,8 @@ use tauri::AppHandle;
 use tauri::Emitter;
 
 const DRAG_THRESHOLD_PX: f64 = 8.0;
+const MULTI_CLICK_MS: u64 = 400;
+const MULTI_CLICK_RADIUS_PX: f64 = 6.0;
 
 struct HookState {
     held_keys: HashSet<Key>,
@@ -14,6 +16,9 @@ struct HookState {
     interval_ms: u64,
     last_pos: (f64, f64),
     mouse_down_pos: Option<(f64, f64)>,
+    /// Tracks consecutive quick clicks to detect double/triple-click word selection.
+    last_click_time: Option<Instant>,
+    last_click_pos: (f64, f64),
 }
 
 impl HookState {
@@ -24,7 +29,24 @@ impl HookState {
             interval_ms,
             last_pos: (0.0, 0.0),
             mouse_down_pos: None,
+            last_click_time: None,
+            last_click_pos: (0.0, 0.0),
         }
+    }
+
+    /// Returns true if this release is a double/triple-click at the same spot
+    /// (i.e. word/line selection without dragging).
+    fn detect_multi_click(&mut self, x: f64, y: f64) -> bool {
+        let now = Instant::now();
+        let is_multi = self.last_click_time.map_or(false, |t| {
+            let time_ok = now.duration_since(t) < Duration::from_millis(MULTI_CLICK_MS);
+            let (lx, ly) = self.last_click_pos;
+            let dist = ((x - lx).powi(2) + (y - ly).powi(2)).sqrt();
+            time_ok && dist < MULTI_CLICK_RADIUS_PX
+        });
+        self.last_click_time = Some(now);
+        self.last_click_pos = (x, y);
+        is_multi
     }
 
     fn ctrl_held(&self) -> bool {
@@ -136,17 +158,22 @@ pub fn spawn_hook(
                         EventType::ButtonRelease(Button::Left) => {
                             let (cx, cy) = st.last_pos;
 
-                            // Only a drag (mouse moved past the threshold while held) counts
-                            // as a text selection. We deliberately do NOT treat double/triple
-                            // clicks as selections: that produced false positives (e.g. double-
-                            // clicking a tray icon) and, crucially, confirming a selection would
-                            // require a synthetic Ctrl+C — which wipes the selection in console /
-                            // terminal apps. The actual copy now happens only when the user
-                            // clicks the floating button (see translate_selection).
-                            let has_selection = st.mouse_down_pos.take().map_or(false, |(dx, dy)| {
+                            let had_drag = st.mouse_down_pos.take().map_or(false, |(dx, dy)| {
                                 let dist = ((cx - dx).powi(2) + (cy - dy).powi(2)).sqrt();
                                 dist >= DRAG_THRESHOLD_PX
                             });
+
+                            // After a real drag, reset the click chain so the next single
+                            // click isn't mistaken for a double-click.
+                            if had_drag {
+                                st.last_click_time = None;
+                            }
+
+                            // A selection is either a drag OR a double/triple-click (word /
+                            // line select). This is safe now: showing the button no longer
+                            // copies anything — the Ctrl+C happens only on button click.
+                            let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
+                            let has_selection = had_drag || is_multi_click;
 
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
                                 "has_selection": has_selection,

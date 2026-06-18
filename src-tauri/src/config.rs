@@ -75,7 +75,7 @@ impl Default for AppSettings {
     }
 }
 
-const CURRENT_SCHEMA: u32 = 2;
+const CURRENT_SCHEMA: u32 = 3;
 
 pub fn default_model_path() -> String {
     dirs::data_local_dir()
@@ -115,9 +115,12 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
 }
 
 fn migrate(settings: &mut AppSettings) {
-    // v2: the default target language became "auto" (was hardcoded "en").
-    // Flip the old default for users who never changed it.
-    if settings.schema_version < 2 && settings.default_target_lang == "en" {
+    // v3: the default translation direction is now fully automatic
+    // ("Auto (EN↔RU)"). One-time adopt it for any pre-v3 config. Users who
+    // deliberately pick + save a fixed target afterwards get schema_version 3
+    // persisted, so this never overrides their choice again.
+    if settings.schema_version < 3 {
+        settings.default_source_lang = "auto".to_string();
         settings.default_target_lang = "auto".to_string();
     }
     settings.schema_version = CURRENT_SCHEMA;

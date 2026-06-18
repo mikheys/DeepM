@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Listener, Manager, State};
 use tokio::sync::Mutex;
@@ -31,6 +31,9 @@ pub(crate) struct AppState {
     last_cursor: Arc<StdMutex<(f64, f64)>>,
     /// True when the main window has keyboard focus (skip floating button).
     main_window_focused: Arc<AtomicBool>,
+    /// Bumped on every mouse-selection event; used to debounce the floating
+    /// button so a quick accidental select+deselect doesn't make it flash.
+    selection_gen: Arc<AtomicU64>,
 }
 
 // ── Translation Commands ──────────────────────────────────────────────────────
@@ -615,6 +618,7 @@ pub fn run() {
         floating_enabled: Mutex::new(show_floating),
         last_cursor: Arc::clone(&cursor_pos),
         main_window_focused: Arc::clone(&main_focused),
+        selection_gen: Arc::new(AtomicU64::new(0)),
     };
 
     tauri::Builder::default()
@@ -768,6 +772,11 @@ pub fn run() {
                         .and_then(|v| v["y"].as_f64())
                         .unwrap_or(0.0);
 
+                    // Bump generation synchronously and in event order. Any older
+                    // pending delayed-show will see a newer value and bail out.
+                    let gen_arc = h.state::<AppState>().selection_gen.clone();
+                    let my_gen = gen_arc.fetch_add(1, Ordering::SeqCst) + 1;
+
                     let h = h.clone();
                     tauri::async_runtime::spawn(async move {
                         if !has_selection {
@@ -805,6 +814,14 @@ pub fn run() {
 
                         let cursor = h.state::<AppState>().last_cursor.clone();
                         let (x, y) = *cursor.lock().unwrap_or_else(|e| e.into_inner());
+
+                        // Debounce: wait a moment, then show only if no newer mouse event
+                        // arrived meanwhile. Prevents the button from flashing when the
+                        // user makes a selection and immediately clicks it away.
+                        tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
+                        if gen_arc.load(Ordering::SeqCst) != my_gen {
+                            return;
+                        }
 
                         // Just SHOW the button next to the cursor. We do NOT copy the
                         // selection here — sending Ctrl+C would wipe the selection in
