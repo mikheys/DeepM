@@ -445,16 +445,63 @@ fn llama_server_binary_path() -> Result<PathBuf> {
     Ok(PathBuf::from("llama-server"))
 }
 
-/// True when the CUDA backend (ggml-cuda.dll) is present next to llama-server,
-/// i.e. the GPU pack is installed. Used to enable/disable the GPU toggle.
-pub fn cuda_available() -> bool {
-    match llama_server_binary_path() {
-        Ok(server) => server
-            .parent()
-            .map(|d| d.join("ggml-cuda.dll").exists())
-            .unwrap_or(false),
-        Err(_) => false,
+/// Directory the engine (llama-server + backend DLLs) lives in.
+fn engine_dir() -> Option<PathBuf> {
+    llama_server_binary_path()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+/// True if a DLL of the given name can be loaded via the OS search path
+/// (app dir, System32, PATH). Used to detect a system-wide CUDA toolkit /
+/// the NVIDIA driver without bundling those files.
+#[cfg(target_os = "windows")]
+fn can_load(name: &str) -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut core::ffi::c_void;
+        fn FreeLibrary(h: *mut core::ffi::c_void) -> i32;
     }
+    let wide: Vec<u16> = OsStr::new(name).encode_wide().chain(std::iter::once(0)).collect();
+    unsafe {
+        let h = LoadLibraryW(wide.as_ptr());
+        if h.is_null() {
+            false
+        } else {
+            FreeLibrary(h);
+            true
+        }
+    }
+}
+#[cfg(not(target_os = "windows"))]
+fn can_load(_name: &str) -> bool {
+    false
+}
+
+/// True if an NVIDIA driver is installed (nvcuda.dll loads). Tells us whether
+/// the machine even has a CUDA-capable GPU, regardless of the GPU pack.
+pub fn nvidia_gpu_present() -> bool {
+    can_load("nvcuda.dll")
+}
+
+/// True if GPU mode would actually work: the llama.cpp CUDA backend
+/// (ggml-cuda.dll) is present next to the engine AND its CUDA runtime deps are
+/// resolvable — either bundled next to it (full pack) or available from a
+/// system CUDA Toolkit on PATH (slim pack). ggml-cuda.dll itself is part of
+/// llama.cpp and is never provided by a system CUDA install, so it must be
+/// shipped; only cublas/cublasLt/cudart can come from the system.
+pub fn cuda_available() -> bool {
+    let dir = match engine_dir() {
+        Some(d) => d,
+        None => return false,
+    };
+    if !dir.join("ggml-cuda.dll").exists() {
+        return false;
+    }
+    // Deps bundled locally (full pack) OR a system CUDA 12.x toolkit on PATH.
+    dir.join("cublasLt64_12.dll").exists() || can_load("cudart64_12.dll")
 }
 
 fn num_cpus() -> usize {

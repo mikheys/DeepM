@@ -12,7 +12,7 @@ mod shortcuts;
 
 use config::{AppSettings, load_settings, save_settings as persist_settings};
 use core::{
-    engine::{cuda_available, TranslationEngine, TranslationRequest},
+    engine::{cuda_available, nvidia_gpu_present, TranslationEngine, TranslationRequest},
     history::{HistoryEntry, TranslationHistory},
     model_manager::{DownloadState, ModelManager, ModelSpec, ModelStatus},
 };
@@ -547,10 +547,15 @@ async fn set_floating_expanded(expanded: bool, app: AppHandle) -> Result<(), Str
     os_integration::set_floating_expanded(&app, expanded).map_err(|e| e.to_string())
 }
 
-/// Whether the CUDA backend is installed (GPU pack present next to the engine).
+/// GPU capability of this machine, for the Settings GPU toggle:
+/// - cuda_ready: GPU mode will actually work (backend + deps resolvable).
+/// - nvidia_present: an NVIDIA driver is installed at all.
 #[tauri::command]
-async fn is_cuda_available() -> Result<bool, String> {
-    Ok(cuda_available())
+async fn gpu_status() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "cuda_ready": cuda_available(),
+        "nvidia_present": nvidia_gpu_present(),
+    }))
 }
 
 /// Lists executable names of apps with a visible window, for the exclusion picker.
@@ -1087,7 +1092,7 @@ pub fn run() {
             hide_floating_button,
             set_floating_expanded,
             list_app_processes,
-            is_cuda_available,
+            gpu_status,
             set_autostart,
             get_autostart,
             restart_engine,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { AppSettings, GlossaryEntry } from "../types";
 import type { Locale } from "../i18n";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
-import { getSettings, saveSettings, isCudaAvailable } from "../api";
+import { getSettings, saveSettings, gpuStatus } from "../api";
 import { useI18n } from "../i18n-context";
 import HotkeyCapture from "./HotkeyCapture";
 import ExclusionsModal from "./ExclusionsModal";
@@ -22,17 +22,25 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
   const [newGlossaryTarget, setNewGlossaryTarget] = useState("");
   const [newGlossaryPair, setNewGlossaryPair] = useState("en->zh");
   const [showExclusions, setShowExclusions] = useState(false);
-  const [cudaAvailable, setCudaAvailable] = useState(true);
+  const [cudaReady, setCudaReady] = useState(true);
+  const [nvidiaPresent, setNvidiaPresent] = useState(true);
 
   useEffect(() => {
     getSettings().then((s) => {
-      // If the CUDA pack isn't installed, force GPU off so the toggle reflects reality.
-      isCudaAvailable().then((ok) => {
-        setCudaAvailable(ok);
-        setSettings(ok ? s : { ...s, use_gpu: false });
+      // Reflect real GPU capability: force GPU off when it can't actually run.
+      gpuStatus().then((g) => {
+        setCudaReady(g.cuda_ready);
+        setNvidiaPresent(g.nvidia_present);
+        setSettings(g.cuda_ready ? s : { ...s, use_gpu: false });
       }).catch(() => setSettings(s));
     }).catch(() => {});
   }, []);
+
+  const gpuHint = cudaReady
+    ? t.settings_gpu_hint
+    : nvidiaPresent
+      ? t.settings_gpu_unavailable     // NVIDIA present, pack missing
+      : t.settings_gpu_no_nvidia;      // no NVIDIA GPU at all
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     setSettings((prev) => prev ? { ...prev, [key]: value } : prev);
@@ -104,13 +112,11 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             <label>{t.settings_gpu}</label>
             <input
               type="checkbox"
-              checked={cudaAvailable && settings.use_gpu}
-              disabled={!cudaAvailable}
+              checked={cudaReady && settings.use_gpu}
+              disabled={!cudaReady}
               onChange={(e) => update("use_gpu", e.target.checked)}
             />
-            <span className="settings-hint">
-              {cudaAvailable ? t.settings_gpu_hint : t.settings_gpu_unavailable}
-            </span>
+            <span className="settings-hint">{gpuHint}</span>
           </div>
         </section>
 

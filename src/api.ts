@@ -122,8 +122,10 @@ export async function deleteModel(size: string, quantization: string): Promise<v
   return invoke("delete_model", { size, quantization });
 }
 
-export async function isCudaAvailable(): Promise<boolean> {
-  return invoke("is_cuda_available");
+export type GpuStatus = { cuda_ready: boolean; nvidia_present: boolean };
+
+export async function gpuStatus(): Promise<GpuStatus> {
+  return invoke("gpu_status");
 }
 
 export async function listAppProcesses(): Promise<string[]> {
