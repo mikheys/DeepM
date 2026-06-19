@@ -92,6 +92,7 @@ export type AppSettings = {
   default_source_lang: string;
   default_target_lang: string;
   use_gpu: boolean;
+  model_version: string;
   model_size: ModelSize;
   quantization: Quantization;
   model_path: string;

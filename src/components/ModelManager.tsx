@@ -26,24 +26,43 @@ type Props = {
   isOnboarding?: boolean;
 };
 
-type Variant = { size: ModelSize; quant: Quantization; label: string; fileSize: string };
+type Variant = {
+  version: string;
+  size: ModelSize;
+  quant: Quantization;
+  label: string;
+  fileSize: string;
+};
 type ExternalModel = { path: string; name: string };
 
-const VARIANTS: Variant[] = [
-  { size: "1.8B", quant: "Q4_K_M", label: "1.8B Q4_K_M", fileSize: "~1.1 GB" },
-  { size: "1.8B", quant: "Q6_K",   label: "1.8B Q6_K",   fileSize: "~1.5 GB" },
-  { size: "1.8B", quant: "Q8_0",   label: "1.8B Q8_0",   fileSize: "~1.9 GB" },
-  { size: "7B",   quant: "Q4_K_M", label: "7B Q4_K_M",   fileSize: "~4.4 GB" },
-  { size: "7B",   quant: "Q6_K",   label: "7B Q6_K",     fileSize: "~5.7 GB" },
-  { size: "7B",   quant: "Q8_0",   label: "7B Q8_0",     fileSize: "~7.7 GB" },
+type Family = { version: string; title: string; note?: string };
+const FAMILIES: Family[] = [
+  { version: "Hy-MT2", title: "Hy-MT2", note: "newer" },
+  { version: "HY-MT1.5", title: "HY-MT1.5" },
 ];
 
-const key = (size: string, quant: string) => `${size}/${quant}`;
+function variantsFor(version: string): Variant[] {
+  return [
+    { version, size: "1.8B", quant: "Q4_K_M", label: "1.8B Q4_K_M", fileSize: "~1.1 GB" },
+    { version, size: "1.8B", quant: "Q6_K",   label: "1.8B Q6_K",   fileSize: "~1.5 GB" },
+    { version, size: "1.8B", quant: "Q8_0",   label: "1.8B Q8_0",   fileSize: "~1.9 GB" },
+    { version, size: "7B",   quant: "Q4_K_M", label: "7B Q4_K_M",   fileSize: "~4.6 GB" },
+    { version, size: "7B",   quant: "Q6_K",   label: "7B Q6_K",     fileSize: "~6.2 GB" },
+    { version, size: "7B",   quant: "Q8_0",   label: "7B Q8_0",     fileSize: "~8.0 GB" },
+  ];
+}
+
+const key = (version: string, size: string, quant: string) => `${version}/${size}/${quant}`;
 const EXTERNALS_KEY = "externalModels";
 
 function variantFromPath(path: string): string | null {
-  const m = path.match(/HY-MT1\.5-(1\.8B|7B)-(Q4_K_M|Q6_K|Q8_0)\.gguf$/i);
-  return m ? key(m[1], m[2]) : null;
+  const f = path.toLowerCase();
+  if (!f.endsWith(".gguf")) return null;
+  const version = f.includes("mt2") ? "Hy-MT2" : f.includes("mt1.5") ? "HY-MT1.5" : null;
+  const size = f.includes("1.8b") ? "1.8B" : f.includes("7b") ? "7B" : null;
+  const quant = f.includes("q4_k_m") ? "Q4_K_M" : f.includes("q6_k") ? "Q6_K" : f.includes("q8_0") ? "Q8_0" : null;
+  if (!version || !size || !quant) return null;
+  return key(version, size, quant);
 }
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -75,8 +94,8 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
 
   const refreshDownloaded = useCallback(async () => {
     try {
-      const pairs = await listDownloadedModels();
-      setDownloaded(new Set(pairs.map(([s, q]) => key(s, q))));
+      const triples = await listDownloadedModels();
+      setDownloaded(new Set(triples.map(([v, s, q]) => key(v, s, q))));
     } catch { setDownloaded(new Set()); }
   }, []);
 
@@ -99,7 +118,7 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     refreshDownloaded();
     getDownloadState().then((d) => {
       if (d) {
-        setDownloadingKey(key(d.size, d.quantization));
+        setDownloadingKey(key(d.version, d.size, d.quantization));
         setDownloadProgress(d.progress);
         setDownloadSpeed(d.speed_mbps);
       }
@@ -122,10 +141,9 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
   const anyBusy = isDownloadingAny || busyKey !== null || engineBusy;
   const isExternalActive = !!activePath && !activeVariant;
 
-  const handleDownload = async (size: ModelSize, quant: Quantization) => {
-    const k = key(size, quant);
-    setDownloadingKey(k); setDownloadProgress(0); setEngineError(null);
-    try { await startModelDownload(size, quant); }
+  const handleDownload = async (v: string, size: ModelSize, quant: Quantization) => {
+    setDownloadingKey(key(v, size, quant)); setDownloadProgress(0); setEngineError(null);
+    try { await startModelDownload(v, size, quant); }
     catch (e) { setEngineError(String(e)); setDownloadingKey(null); }
   };
 
@@ -134,17 +152,17 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     setDownloadingKey(null); setDownloadProgress(0);
   };
 
-  const handleLoad = async (size: ModelSize, quant: Quantization) => {
-    setBusyKey(key(size, quant)); setEngineError(null);
-    try { await loadModel(size, quant); }
+  const handleLoad = async (v: string, size: ModelSize, quant: Quantization) => {
+    setBusyKey(key(v, size, quant)); setEngineError(null);
+    try { await loadModel(v, size, quant); }
     catch (e) { setEngineError(String(e)); setBusyKey(null); }
   };
 
-  const handleDelete = async (size: ModelSize, quant: Quantization) => {
-    const k = key(size, quant);
+  const handleDelete = async (v: string, size: ModelSize, quant: Quantization) => {
+    const k = key(v, size, quant);
     setDeletingKey(k);
     try {
-      await deleteModel(size, quant);
+      await deleteModel(v, size, quant);
       await refreshDownloaded();
       if (activeVariant === k) { setActiveVariant(null); refreshStatus(); }
     } catch (e) { setEngineError(String(e)); }
@@ -180,6 +198,50 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
 
   const hasActive = !!activeVariant || isExternalActive;
 
+  const renderVariant = (v: Variant) => {
+    const k = key(v.version, v.size, v.quant);
+    const isActive = activeVariant === k;
+    const isPresent = downloaded.has(k);
+    const isThisDownloading = downloadingKey === k;
+    const isThisLoading = busyKey === k;
+    const isThisDeleting = deletingKey === k;
+    return (
+      <div key={k} className={`variant-row${isActive ? " variant-active" : ""}`}>
+        <div className="variant-info">
+          <span className="variant-label">{v.label}</span>
+          <span className="variant-size">{v.fileSize}</span>
+        </div>
+        <div className="variant-actions">
+          {isThisDownloading ? (
+            <span className="variant-downloading">{Math.round(downloadProgress)}%</span>
+          ) : isPresent ? (
+            <>
+              {isActive ? (
+                <span className="variant-loaded-badge">✓ {t.loaded_badge}</span>
+              ) : (
+                <button className="btn-small btn-load" disabled={anyBusy}
+                  onClick={() => handleLoad(v.version, v.size, v.quant)}>
+                  {isThisLoading ? "…" : t.load_btn}
+                </button>
+              )}
+              <button className="btn-small btn-delete"
+                disabled={isThisDeleting || anyBusy || isActive}
+                onClick={() => handleDelete(v.version, v.size, v.quant)}
+                title={isActive ? t.cannot_delete_active : t.delete_btn}>
+                {isThisDeleting ? "…" : t.delete_btn}
+              </button>
+            </>
+          ) : (
+            <button className="btn-small btn-download" disabled={isDownloadingAny}
+              onClick={() => handleDownload(v.version, v.size, v.quant)}>
+              {t.download_btn}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`model-manager ${isOnboarding ? "onboarding-mode" : ""}`}>
       {isOnboarding ? (
@@ -210,7 +272,7 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
       {isDownloadingAny && (
         <div className="download-progress-card">
           <div className="progress-label">
-            <span>{t.downloading} {downloadingKey?.replace("/", " ")}…</span>
+            <span>{t.downloading} {downloadingKey?.replace(/\//g, " ")}…</span>
             <span className="progress-speed">{downloadSpeed.toFixed(1)} MB/s</span>
           </div>
           <div className="progress-bar-track">
@@ -221,58 +283,21 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         </div>
       )}
 
-      {/* Built-in variants */}
-      <div className="model-section">
-        <label className="section-label">
-          {t.available_variants}
-          <span className="section-hint">{t.variants_hint}</span>
-        </label>
-        <div className="variant-grid">
-          {VARIANTS.map((v) => {
-            const k = key(v.size, v.quant);
-            const isActive = activeVariant === k;
-            const isPresent = downloaded.has(k);
-            const isThisDownloading = downloadingKey === k;
-            const isThisLoading = busyKey === k;
-            const isThisDeleting = deletingKey === k;
-            return (
-              <div key={k} className={`variant-row${isActive ? " variant-active" : ""}`}>
-                <div className="variant-info">
-                  <span className="variant-label">{v.label}</span>
-                  <span className="variant-size">{v.fileSize}</span>
-                </div>
-                <div className="variant-actions">
-                  {isThisDownloading ? (
-                    <span className="variant-downloading">{Math.round(downloadProgress)}%</span>
-                  ) : isPresent ? (
-                    <>
-                      {isActive ? (
-                        <span className="variant-loaded-badge">✓ {t.loaded_badge}</span>
-                      ) : (
-                        <button className="btn-small btn-load" disabled={anyBusy}
-                          onClick={() => handleLoad(v.size, v.quant)}>
-                          {isThisLoading ? "…" : t.load_btn}
-                        </button>
-                      )}
-                      <button className="btn-small btn-delete"
-                        disabled={isThisDeleting || anyBusy || isActive}
-                        onClick={() => handleDelete(v.size, v.quant)}
-                        title={isActive ? t.cannot_delete_active : t.delete_btn}>
-                        {isThisDeleting ? "…" : t.delete_btn}
-                      </button>
-                    </>
-                  ) : (
-                    <button className="btn-small btn-download" disabled={isDownloadingAny}
-                      onClick={() => handleDownload(v.size, v.quant)}>
-                      {t.download_btn}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {/* Built-in model families */}
+      {FAMILIES.map((fam) => (
+        <div className="model-section" key={fam.version}>
+          <label className="section-label">
+            {fam.title}
+            {fam.note === "newer" && <span className="model-new-tag">{t.model_newer_tag}</span>}
+            <span className="section-hint">
+              {fam.version === "Hy-MT2" ? t.model_v2_hint : t.variants_hint}
+            </span>
+          </label>
+          <div className="variant-grid">
+            {variantsFor(fam.version).map(renderVariant)}
+          </div>
         </div>
-      </div>
+      ))}
 
       {/* External models */}
       <div className="model-section">

@@ -30,6 +30,8 @@ pub struct AppSettings {
     pub default_source_lang: String,
     pub default_target_lang: String,
     pub use_gpu: bool,
+    #[serde(default = "default_model_version")]
+    pub model_version: String,
     pub model_size: String,
     pub quantization: String,
     pub model_path: String,
@@ -60,6 +62,10 @@ fn default_triple_copy_count() -> u32 {
     3
 }
 
+fn default_model_version() -> String {
+    "HY-MT1.5".to_string()
+}
+
 fn default_locale() -> String {
     "en".to_string()
 }
@@ -71,6 +77,7 @@ impl Default for AppSettings {
             default_source_lang: "auto".to_string(),
             default_target_lang: "auto".to_string(),
             use_gpu: true,
+            model_version: "HY-MT1.5".to_string(),
             model_size: "1.8B".to_string(),
             quantization: "Q4_K_M".to_string(),
             model_path,

@@ -43,6 +43,8 @@ export type Strings = {
   model_external_placeholder: string;
   model_add_external: string;
   model_external_tag: string;
+  model_newer_tag: string;
+  model_v2_hint: string;
 
   // History
   search_placeholder: string;
@@ -159,6 +161,8 @@ const en: Strings = {
   model_external_placeholder: "Full path to a .gguf file",
   model_add_external: "Add model file…",
   model_external_tag: "external",
+  model_newer_tag: "new",
+  model_v2_hint: "33 languages · more modes (style, context, structured data)",
 
   search_placeholder: "Search history…",
   clear_all: "Clear all",
@@ -269,6 +273,8 @@ const ru: Strings = {
   model_external_placeholder: "Полный путь к файлу .gguf",
   model_add_external: "Добавить файл модели…",
   model_external_tag: "сторонняя",
+  model_newer_tag: "новее",
+  model_v2_hint: "33 языка · больше режимов (стиль, контекст, структуры)",
 
   search_placeholder: "Поиск по истории…",
   clear_all: "Очистить всё",

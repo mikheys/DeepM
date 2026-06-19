@@ -254,6 +254,19 @@
   letter-spacing: 0;
 }
 
+.model-new-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--color-accent);
+  border-radius: 8px;
+  vertical-align: middle;
+}
+
 .model-size-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;

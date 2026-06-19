@@ -47,6 +47,7 @@ async fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, Str
 
 #[tauri::command]
 async fn start_model_download(
+    version: String,
     size: String,
     quantization: String,
     app: AppHandle,
@@ -61,6 +62,7 @@ async fn start_model_download(
     let engine = Arc::clone(&state.engine);
     let app_clone = app.clone();
     let progress_manager = Arc::clone(&state.model_manager);
+    let dl_version = version.clone();
     let dl_size = size.clone();
     let dl_quant = quantization.clone();
 
@@ -68,11 +70,12 @@ async fn start_model_download(
         let result = manager
             .download(
                 &model_dir,
+                &version,
                 &size,
                 &quantization,
                 move |progress, speed_mbps| {
                     // Persist progress so reopening the tab resumes the display.
-                    progress_manager.set_download_state(&dl_size, &dl_quant, progress, speed_mbps);
+                    progress_manager.set_download_state(&dl_version, &dl_size, &dl_quant, progress, speed_mbps);
                     let _ = app_clone.emit(
                         "download_progress",
                         serde_json::json!({ "progress": progress, "speed_mbps": speed_mbps }),
@@ -90,13 +93,14 @@ async fn start_model_download(
                 // downloaded — the user loads it explicitly via the Load button,
                 // so an in-progress translation session isn't disrupted.
                 if engine.is_running().await {
-                    let _ = manager.probe(&model_dir, &size, &quantization).await;
+                    let _ = manager.probe(&model_dir, &version, &size, &quantization).await;
                     let _ = app.emit("model_downloaded", ());
                 } else {
                     match engine.start(path).await {
                         Ok(()) => {
-                            let _ = manager.probe(&model_dir, &size, &quantization).await;
+                            let _ = manager.probe(&model_dir, &version, &size, &quantization).await;
                             if let Ok(mut s) = config::load_settings() {
+                                s.model_version = version.clone();
                                 s.model_size = size.clone();
                                 s.quantization = quantization.clone();
                                 let _ = persist_settings(&s);
@@ -569,24 +573,25 @@ async fn list_app_processes() -> Result<Vec<String>, String> {
 // ── Model file management commands ───────────────────────────────────────────
 
 #[tauri::command]
-async fn list_downloaded_models(state: State<'_, AppState>) -> Result<Vec<(String, String)>, String> {
+async fn list_downloaded_models(state: State<'_, AppState>) -> Result<Vec<(String, String, String)>, String> {
     let model_dir = state.settings.lock().await.model_path.clone();
     Ok(state.model_manager.list_downloaded(&model_dir))
 }
 
 #[tauri::command]
 async fn delete_model(
+    version: String,
     size: String,
     quantization: String,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let model_dir = state.settings.lock().await.model_path.clone();
-    state.model_manager.delete_model_file(&model_dir, &size, &quantization).map_err(|e| e.to_string())?;
+    state.model_manager.delete_model_file(&model_dir, &version, &size, &quantization).map_err(|e| e.to_string())?;
     // If the just-deleted model was active, reset status
     let is_active = state.model_manager.current_spec.lock().await
         .as_ref()
-        .map_or(false, |s| s.size == size && s.quantization == quantization);
+        .map_or(false, |s| s.version == version && s.size == size && s.quantization == quantization);
     if is_active {
         *state.model_manager.status.lock().await = ModelStatus::NotDownloaded;
         *state.model_manager.current_spec.lock().await = None;
@@ -606,21 +611,21 @@ async fn get_download_state(state: State<'_, AppState>) -> Result<Option<Downloa
 /// switches the active model, unlike restart_engine which reloads the current one.
 #[tauri::command]
 async fn load_model(
+    version: String,
     size: String,
     quantization: String,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let model_dir = state.settings.lock().await.model_path.clone();
-    let path = PathBuf::from(&model_dir)
-        .join(format!("HY-MT1.5-{}-{}.gguf", size, quantization));
-    if !path.exists() {
-        return Err("Файл модели не найден — скачайте её сначала.".into());
-    }
+    let path = state.model_manager
+        .local_file(&model_dir, &version, &size, &quantization)
+        .ok_or("Файл модели не найден — скачайте её сначала.")?;
 
     // Persist as the active model so it survives restarts.
     {
         let mut s = state.settings.lock().await;
+        s.model_version = version.clone();
         s.model_size = size.clone();
         s.quantization = quantization.clone();
         let snapshot = s.clone();
@@ -628,6 +633,7 @@ async fn load_model(
         let _ = persist_settings(&snapshot);
     }
     *state.model_manager.current_spec.lock().await = Some(ModelSpec {
+        version: version.clone(),
         size: size.clone(),
         quantization: quantization.clone(),
     });
@@ -696,41 +702,27 @@ async fn restart_engine(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let (model_dir, settings_size, settings_quant) = {
+    let (model_dir, sv, ss, sq) = {
         let s = state.settings.lock().await;
-        (s.model_path.clone(), s.model_size.clone(), s.quantization.clone())
+        (s.model_path.clone(), s.model_version.clone(), s.model_size.clone(), s.quantization.clone())
     };
 
-    // Try the model configured in settings first; if that file doesn't exist
-    // (e.g. because a fallback model was loaded at startup), try whatever model
-    // is currently known to the model manager, then any downloaded model.
-    let path = {
-        let primary = PathBuf::from(&model_dir)
-            .join(format!("HY-MT1.5-{}-{}.gguf", settings_size, settings_quant));
-        if primary.exists() {
-            primary
+    let mm = &state.model_manager;
+    // Settings model → currently-loaded spec → any downloaded model.
+    let path = if let Some(p) = mm.local_file(&model_dir, &sv, &ss, &sq) {
+        p
+    } else {
+        let current = mm.current_spec.lock().await.clone();
+        let spec_path = current
+            .and_then(|s| mm.local_file(&model_dir, &s.version, &s.size, &s.quantization));
+        if let Some(p) = spec_path {
+            p
         } else {
-            // Try the model that was actually loaded (fallback spec)
-            let current = state.model_manager.current_spec.lock().await;
-            let spec_path = current.as_ref().map(|s| {
-                PathBuf::from(&model_dir).join(format!("HY-MT1.5-{}-{}.gguf", s.size, s.quantization))
-            });
-            drop(current);
-
-            if let Some(p) = spec_path.filter(|p| p.exists()) {
-                p
-            } else {
-                // Last resort: pick any downloaded model
-                let found = state.model_manager.list_downloaded(&model_dir)
-                    .into_iter()
-                    .find_map(|(s, q)| {
-                        let p = PathBuf::from(&model_dir).join(format!("HY-MT1.5-{}-{}.gguf", s, q));
-                        p.exists().then_some(p)
-                    });
-                match found {
-                    Some(p) => p,
-                    None => return Err("Модель не найдена — скачайте модель в менеджере моделей.".into()),
-                }
+            match mm.list_downloaded(&model_dir).into_iter().next() {
+                Some((v, s, q)) => mm
+                    .local_file(&model_dir, &v, &s, &q)
+                    .ok_or("Модель не найдена — скачайте модель в менеджере моделей.")?,
+                None => return Err("Модель не найдена — скачайте модель в менеджере моделей.".into()),
             }
         }
     };
@@ -786,6 +778,7 @@ pub fn run() {
     let settings = load_settings().unwrap_or_default();
     let use_gpu = settings.use_gpu;
     let model_path_str = settings.model_path.clone();
+    let model_version = settings.model_version.clone();
     let model_size = settings.model_size.clone();
     let model_quant = settings.quantization.clone();
     let show_floating = settings.show_floating_button;
@@ -881,27 +874,26 @@ pub fn run() {
                 let eng = Arc::clone(&engine);
                 let h = handle.clone();
                 let mp = model_path_str.clone();
+                let mv = model_version.clone();
                 let ms = model_size.clone();
                 let mq = model_quant.clone();
 
                 tauri::async_runtime::spawn(async move {
                     // Try saved model first; fall back to any downloaded model
-                    let found = if manager.probe(&mp, &ms, &mq).await {
-                        Some((ms.clone(), mq.clone()))
+                    let found = if manager.probe(&mp, &mv, &ms, &mq).await {
+                        Some((mv.clone(), ms.clone(), mq.clone()))
                     } else {
-                        manager.list_downloaded(&mp).into_iter().next().and_then(|(s, q)| {
-                            let path = PathBuf::from(&mp).join(format!("HY-MT1.5-{}-{}.gguf", s, q));
-                            if path.exists() { Some((s, q)) } else { None }
-                        })
+                        manager.list_downloaded(&mp).into_iter().next()
                     };
 
-                    if let Some((size, quant)) = found {
+                    if let Some((version, size, quant)) = found {
                         // Ensure status is marked Ready (covers the fallback path where
                         // probe() was not called for the found model).
-                        manager.probe(&mp, &size, &quant).await;
-                        let path = PathBuf::from(&mp).join(
-                            format!("HY-MT1.5-{}-{}.gguf", size, quant)
-                        );
+                        manager.probe(&mp, &version, &size, &quant).await;
+                        let path = match manager.local_file(&mp, &version, &size, &quant) {
+                            Some(p) => p,
+                            None => return,
+                        };
                         match eng.start(path).await {
                             Ok(()) => {
                                 let _ = h.emit("model_ready", ());

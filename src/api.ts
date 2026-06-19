@@ -36,10 +36,11 @@ export async function getModelStatus(): Promise<ModelStatus> {
 }
 
 export async function startModelDownload(
+  version: string,
   size: string,
   quantization: string
 ): Promise<void> {
-  return invoke("start_model_download", { size, quantization });
+  return invoke("start_model_download", { version, size, quantization });
 }
 
 export async function cancelModelDownload(): Promise<void> {
@@ -95,8 +96,8 @@ export async function restartEngine(): Promise<void> {
   return invoke("restart_engine");
 }
 
-export async function loadModel(size: string, quantization: string): Promise<void> {
-  return invoke("load_model", { size, quantization });
+export async function loadModel(version: string, size: string, quantization: string): Promise<void> {
+  return invoke("load_model", { version, size, quantization });
 }
 
 export async function loadExternalModel(path: string): Promise<void> {
@@ -104,6 +105,7 @@ export async function loadExternalModel(path: string): Promise<void> {
 }
 
 export type DownloadState = {
+  version: string;
   size: string;
   quantization: string;
   progress: number;
@@ -114,12 +116,12 @@ export async function getDownloadState(): Promise<DownloadState | null> {
   return invoke("get_download_state");
 }
 
-export async function listDownloadedModels(): Promise<[string, string][]> {
+export async function listDownloadedModels(): Promise<[string, string, string][]> {
   return invoke("list_downloaded_models");
 }
 
-export async function deleteModel(size: string, quantization: string): Promise<void> {
-  return invoke("delete_model", { size, quantization });
+export async function deleteModel(version: string, size: string, quantization: string): Promise<void> {
+  return invoke("delete_model", { version, size, quantization });
 }
 
 export type GpuStatus = { cuda_ready: boolean; nvidia_present: boolean };

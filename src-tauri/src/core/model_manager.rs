@@ -5,14 +5,35 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
-use sha2::Digest;
 
-use crate::config::default_model_path;
-
-/// HuggingFace repo IDs for each model variant.
-const HF_REPO_1_8B: &str = "tencent/HY-MT1.5-1.8B-GGUF";
-const HF_REPO_7B: &str = "tencent/HY-MT1.5-7B-GGUF";
 const HF_BASE_URL: &str = "https://huggingface.co";
+
+/// Model families we offer for download. The newer Hy-MT2 supports more modes.
+pub const VERSIONS: &[&str] = &["HY-MT1.5", "Hy-MT2"];
+pub const SIZES: &[&str] = &["1.8B", "7B"];
+pub const QUANTS: &[&str] = &["Q4_K_M", "Q6_K", "Q8_0"];
+
+/// HuggingFace repo for a (version, size), e.g. "tencent/Hy-MT2-7B-GGUF".
+fn repo_for(version: &str, size: &str) -> String {
+    format!("tencent/{}-{}-GGUF", version, size)
+}
+
+/// Lower-cased token that uniquely identifies a version inside a filename.
+/// "HY-MT1.5" => "mt1.5", "Hy-MT2" => "mt2" (the two never collide).
+fn version_token(version: &str) -> String {
+    let v = version.to_lowercase();
+    if v.contains("mt2") { "mt2".into() } else { "mt1.5".into() }
+}
+
+/// Does a gguf file belong to (version, size, quant)? Case-insensitive — robust
+/// to Tencent's inconsistent filename casing (Hy-MT2 vs HY-MT2).
+fn file_matches(filename: &str, version: &str, size: &str, quant: &str) -> bool {
+    let f = filename.to_lowercase();
+    f.ends_with(".gguf")
+        && f.contains(&version_token(version))
+        && f.contains(&size.to_lowercase())
+        && f.contains(&quant.to_lowercase())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -25,34 +46,16 @@ pub enum ModelStatus {
 
 #[derive(Debug, Clone)]
 pub struct ModelSpec {
+    pub version: String,
     pub size: String,
     pub quantization: String,
-}
-
-impl ModelSpec {
-    pub fn filename(&self) -> String {
-        // Exact filenames as they appear in tencent/HY-MT1.5-x.xB-GGUF on HuggingFace
-        format!("HY-MT1.5-{}-{}.gguf", self.size, self.quantization)
-    }
-
-    pub fn hf_repo(&self) -> &'static str {
-        if self.size == "7B" { HF_REPO_7B } else { HF_REPO_1_8B }
-    }
-
-    pub fn download_url(&self) -> String {
-        format!(
-            "{}/{}/resolve/main/{}",
-            HF_BASE_URL,
-            self.hf_repo(),
-            self.filename()
-        )
-    }
 }
 
 /// Live download progress, queryable so the UI can resume showing it after the
 /// model-manager tab is left and reopened (the download itself keeps running).
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadState {
+    pub version: String,
     pub size: String,
     pub quantization: String,
     pub progress: f64,
@@ -63,8 +66,6 @@ pub struct ModelManager {
     pub status: Arc<Mutex<ModelStatus>>,
     pub current_spec: Arc<Mutex<Option<ModelSpec>>>,
     cancel_flag: Arc<Mutex<bool>>,
-    /// Set while a download is in progress (sync mutex so the progress callback
-    /// can update it). None when idle.
     download_state: Arc<StdMutex<Option<DownloadState>>>,
 }
 
@@ -78,13 +79,13 @@ impl ModelManager {
         }
     }
 
-    /// Snapshot of the active download (if any).
     pub fn get_download_state(&self) -> Option<DownloadState> {
         self.download_state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    pub fn set_download_state(&self, size: &str, quant: &str, progress: f64, speed_mbps: f64) {
+    pub fn set_download_state(&self, version: &str, size: &str, quant: &str, progress: f64, speed_mbps: f64) {
         *self.download_state.lock().unwrap_or_else(|e| e.into_inner()) = Some(DownloadState {
+            version: version.to_string(),
             size: size.to_string(),
             quantization: quant.to_string(),
             progress,
@@ -100,92 +101,121 @@ impl ModelManager {
         self.status.lock().await.clone()
     }
 
-    /// Check if a model file already exists for this spec and mark as ready if so.
-    pub async fn probe(&self, model_path: &str, size: &str, quantization: &str) -> bool {
-        let spec = ModelSpec {
-            size: size.to_string(),
-            quantization: quantization.to_string(),
-        };
-        let path = PathBuf::from(model_path).join(spec.filename());
-        if path.exists() {
-            let mut status = self.status.lock().await;
-            *status = ModelStatus::Ready { path: path.to_string_lossy().to_string() };
-            let mut cs = self.current_spec.lock().await;
-            *cs = Some(spec);
+    /// Finds the local gguf file for a (version, size, quant), if downloaded.
+    pub fn local_file(&self, model_dir: &str, version: &str, size: &str, quant: &str) -> Option<PathBuf> {
+        let rd = std::fs::read_dir(Path::new(model_dir)).ok()?;
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if file_matches(&name, version, size, quant) {
+                return Some(entry.path());
+            }
+        }
+        None
+    }
+
+    /// If the model file exists, mark it Ready and remember it as the current spec.
+    pub async fn probe(&self, model_path: &str, version: &str, size: &str, quant: &str) -> bool {
+        if let Some(path) = self.local_file(model_path, version, size, quant) {
+            *self.status.lock().await =
+                ModelStatus::Ready { path: path.to_string_lossy().to_string() };
+            *self.current_spec.lock().await = Some(ModelSpec {
+                version: version.to_string(),
+                size: size.to_string(),
+                quantization: quant.to_string(),
+            });
             return true;
         }
         false
     }
 
-    pub fn model_path_for(&self, model_dir: &str, spec: &ModelSpec) -> PathBuf {
-        PathBuf::from(model_dir).join(spec.filename())
-    }
-
     pub async fn cancel(&self) {
-        let mut flag = self.cancel_flag.lock().await;
-        *flag = true;
+        *self.cancel_flag.lock().await = true;
     }
 
-    /// Returns list of (size, quant) pairs for all downloaded GGUF files.
-    pub fn list_downloaded(&self, model_dir: &str) -> Vec<(String, String)> {
+    /// (version, size, quant) for every downloaded gguf we recognise.
+    pub fn list_downloaded(&self, model_dir: &str) -> Vec<(String, String, String)> {
         let mut result = Vec::new();
-        for size in &["1.8B", "7B"] {
-            for quant in &["Q4_K_M", "Q6_K", "Q8_0"] {
-                let spec = ModelSpec { size: size.to_string(), quantization: quant.to_string() };
-                if std::path::Path::new(model_dir).join(spec.filename()).exists() {
-                    result.push((size.to_string(), quant.to_string()));
+        for version in VERSIONS {
+            for size in SIZES {
+                for quant in QUANTS {
+                    if self.local_file(model_dir, version, size, quant).is_some() {
+                        result.push((version.to_string(), size.to_string(), quant.to_string()));
+                    }
                 }
             }
         }
         result
     }
 
-    /// Deletes a model file from disk.
-    pub fn delete_model_file(&self, model_dir: &str, size: &str, quantization: &str) -> Result<()> {
-        let spec = ModelSpec { size: size.to_string(), quantization: quantization.to_string() };
-        let path = std::path::PathBuf::from(model_dir).join(spec.filename());
-        if path.exists() {
+    pub fn delete_model_file(&self, model_dir: &str, version: &str, size: &str, quant: &str) -> Result<()> {
+        if let Some(path) = self.local_file(model_dir, version, size, quant) {
             std::fs::remove_file(&path)?;
         }
         Ok(())
     }
 
+    /// Resolve the EXACT remote gguf filename for a quant via the HF API — robust
+    /// to inconsistent casing instead of guessing the name.
+    async fn resolve_remote_filename(
+        client: &reqwest::Client,
+        repo: &str,
+        size: &str,
+        quant: &str,
+    ) -> Result<String> {
+        let url = format!("{HF_BASE_URL}/api/models/{repo}");
+        let json: serde_json::Value = client
+            .get(&url)
+            .header("User-Agent", "DeepM")
+            .send()
+            .await?
+            .json()
+            .await?;
+        let siblings = json
+            .get("siblings")
+            .and_then(|s| s.as_array())
+            .ok_or_else(|| anyhow!("HuggingFace repo {repo} has no file list"))?;
+
+        let q = quant.to_lowercase();
+        let sz = size.to_lowercase();
+        for s in siblings {
+            if let Some(name) = s.get("rfilename").and_then(|r| r.as_str()) {
+                let n = name.to_lowercase();
+                if n.ends_with(".gguf") && n.contains(&q) && n.contains(&sz) {
+                    return Ok(name.to_string());
+                }
+            }
+        }
+        Err(anyhow!("No {quant} GGUF found in {repo}"))
+    }
+
     pub async fn download(
         &self,
         model_dir: &str,
+        version: &str,
         size: &str,
-        quantization: &str,
+        quant: &str,
         progress_cb: impl Fn(f64, f64) + Send + 'static,
     ) -> Result<PathBuf> {
-        // Reset cancel flag
-        {
-            let mut flag = self.cancel_flag.lock().await;
-            *flag = false;
-        }
-
-        let spec = ModelSpec {
-            size: size.to_string(),
-            quantization: quantization.to_string(),
-        };
+        *self.cancel_flag.lock().await = false;
 
         let dir = PathBuf::from(model_dir);
         tokio::fs::create_dir_all(&dir).await?;
 
-        let dest = dir.join(spec.filename());
-        let url = spec.download_url();
-
-        log::info!("Downloading model from {url} to {}", dest.display());
-
         let client = reqwest::Client::new();
+        let repo = repo_for(version, size);
+        let filename = Self::resolve_remote_filename(&client, &repo, size, quant).await?;
+        let dest = dir.join(&filename);
+        let url = format!("{HF_BASE_URL}/{repo}/resolve/main/{filename}");
 
-        // Support resume: check existing partial download
+        log::info!("Downloading {url} -> {}", dest.display());
+
         let existing_bytes = if dest.exists() {
             tokio::fs::metadata(&dest).await?.len()
         } else {
             0
         };
 
-        let mut req = client.get(&url);
+        let mut req = client.get(&url).header("User-Agent", "DeepM");
         if existing_bytes > 0 {
             req = req.header("Range", format!("bytes={}-", existing_bytes));
         }
@@ -218,11 +248,9 @@ impl ModelManager {
         let start = std::time::Instant::now();
 
         while let Some(chunk) = stream.next().await {
-            // Check cancel
             if *self.cancel_flag.lock().await {
                 return Err(anyhow!("Download cancelled"));
             }
-
             let chunk = chunk?;
             file.write_all(&chunk).await?;
             downloaded += chunk.len() as u64;
