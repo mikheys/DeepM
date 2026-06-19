@@ -170,4 +170,5 @@
   color: #f87171;
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
 }

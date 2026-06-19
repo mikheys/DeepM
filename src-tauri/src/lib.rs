@@ -1004,6 +1004,23 @@ pub fn run() {
                             return;
                         }
 
+                        // If the selection was made INSIDE our own floating popup,
+                        // do nothing — the user is selecting part of the translation
+                        // to copy it. We must not re-trigger the button there.
+                        let in_floating = h.get_webview_window("floating").map_or(false, |fw| {
+                            if !os_integration::is_floating_visible(&h) { return false; }
+                            match (fw.outer_position(), fw.outer_size()) {
+                                (Ok(pos), Ok(sz)) => {
+                                    let fx = pos.x as f64;
+                                    let fy = pos.y as f64;
+                                    click_x >= fx && click_x <= fx + sz.width as f64
+                                        && click_y >= fy && click_y <= fy + sz.height as f64
+                                }
+                                _ => false,
+                            }
+                        });
+                        if in_floating { return; }
+
                         // Skip if user is working inside the main DeepM window
                         let is_focused = h.state::<AppState>()
                             .main_window_focused.load(Ordering::Relaxed);

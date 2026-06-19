@@ -140,9 +140,10 @@ export default function FloatingButton() {
         </div>
       </div>
 
-      {/* Translation card */}
+      {/* Translation card — selectable; no preventDefault so the user can
+          drag-select part of the translation and Ctrl+C it. */}
       {isExpanded && (
-        <div className="fb-card-wrap" onMouseDown={noFocus}>
+        <div className="fb-card-wrap">
           <div className={`fb-card${uiState === "error" ? " fb-card-error" : ""}`}>
             <div className="fb-card-header">
               <span className="fb-lang-badge">{langLabel}</span>

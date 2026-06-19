@@ -247,6 +247,11 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
                     py = ny;
                 }
 
+                // Collapsed button is non-activating — it must never steal focus
+                // from the source app when it appears.
+                let ex = win32::GetWindowLongPtrW(hwnd.0, win32::GWL_EXSTYLE);
+                win32::SetWindowLongPtrW(hwnd.0, win32::GWL_EXSTYLE, ex | win32::WS_EX_NOACTIVATE);
+
                 // Position + show topmost WITHOUT activating (keeps source focus).
                 win32::SetWindowPos(
                     hwnd.0,
@@ -304,6 +309,19 @@ pub fn set_floating_expanded(app: &AppHandle, expanded: bool) -> Result<()> {
                     x = nx;
                     y = ny;
                 }
+
+                // When the card is shown, make the window activatable so the user
+                // can click into the translation, select part of it and Ctrl+C.
+                // While collapsed (button only) keep it non-activating so it never
+                // steals focus on appearance.
+                let cur = win32::GetWindowLongPtrW(hwnd.0, win32::GWL_EXSTYLE);
+                let ex = if expanded {
+                    cur & !win32::WS_EX_NOACTIVATE
+                } else {
+                    cur | win32::WS_EX_NOACTIVATE
+                };
+                win32::SetWindowLongPtrW(hwnd.0, win32::GWL_EXSTYLE, ex);
+
                 win32::SetWindowPos(
                     hwnd.0,
                     win32::hwnd_topmost(),
