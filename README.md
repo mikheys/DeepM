@@ -28,6 +28,9 @@ All translation happens on your device. The internet is only needed to download 
 - **Translation modes** — *Standard* (direct), *Contextual* (uses previous text), *Formatted* (keeps markup tags).
 - **History & glossary** — stored locally; custom terms are passed to the model.
 - **App exclusions** — disable the button/hotkeys in chosen apps (e.g. terminals, games).
+- **Screenshot / image OCR** — translate text you can't select: snip a screen
+  area, OCR a screenshot from the clipboard, or pick an image file (offline,
+  via the built-in Windows OCR engine).
 - **Tray & autostart** — runs in the background; optional start with Windows.
 
 ### Install (end users)
@@ -140,6 +143,9 @@ MIT
 - **Режимы перевода** — *Стандарт* (прямой), *С контекстом* (учитывает предыдущий текст), *С разметкой* (сохраняет теги).
 - **История и глоссарий** — хранятся локально; свои термины передаются модели.
 - **Исключения приложений** — отключить кнопку/хоткеи в выбранных программах (терминалы, игры).
+- **OCR скриншотов / картинок** — перевод невыделяемого текста: снимок области
+  экрана, распознавание скриншота из буфера или выбор файла изображения
+  (офлайн, через встроенный в Windows OCR-движок).
 - **Трей и автозапуск** — работает в фоне; опциональный старт с Windows.
 
 ### Установка (для пользователей)
