@@ -417,8 +417,8 @@ fn llama_server_binary_path() -> Result<PathBuf> {
         .unwrap_or_else(|| PathBuf::from("."));
 
     // In a packaged build the engine ships next to the exe under `engine/`
-    // (bundled as a Tauri resource). In dev, CARGO_MANIFEST_DIR is set — prefer
-    // the full GPU `binaries/` folder, falling back to the CPU `engine/` subset.
+    // (bundled as a Tauri resource). These exe-relative paths are the ONLY ones
+    // used in a release build.
     let mut candidates: Vec<PathBuf> = vec![
         exe_dir.join("engine").join("llama-server.exe"),
         exe_dir.join("resources").join("engine").join("llama-server.exe"),
@@ -427,6 +427,12 @@ fn llama_server_binary_path() -> Result<PathBuf> {
         PathBuf::from("llama-server.exe"),
     ];
 
+    // DEV ONLY: CARGO_MANIFEST_DIR is baked in at compile time, so this must be
+    // gated behind debug_assertions — otherwise a release built on this machine
+    // would hardcode an absolute path to the dev GPU `binaries/` folder and use
+    // it instead of the bundled CPU engine (breaking the CPU build's behaviour
+    // and its GPU auto-detection on the build machine).
+    #[cfg(debug_assertions)]
     if let Some(dir) = option_env!("CARGO_MANIFEST_DIR") {
         // Dev: try GPU binaries first, then the staged CPU engine folder.
         candidates.insert(0, PathBuf::from(dir).join("engine").join("llama-server.exe"));
