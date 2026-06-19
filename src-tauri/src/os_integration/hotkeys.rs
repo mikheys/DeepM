@@ -199,16 +199,14 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
                                 }
                             }
 
-                            // Fire translate-replace once per chord. Without the
-                            // tr_fired guard, key auto-repeat re-emits this every few
-                            // milliseconds, causing the translation to be pasted
-                            // multiple times.
+                            // ARM translate-replace while the chord is held; it
+                            // FIRES on release (below). Firing on press would run
+                            // the synthetic Ctrl+C/Ctrl+V while the user still holds
+                            // the modifiers (Shift/Alt), which mangles the input
+                            // (e.g. stray "⌀¢" and copying the wrong text).
                             let tr_hotkey = st.config.translate_replace();
                             if st.is_translate_replace_combo(&tr_hotkey) {
-                                if !st.tr_fired {
-                                    st.tr_fired = true;
-                                    let _ = app.emit("hotkey_translate_replace", ());
-                                }
+                                st.tr_fired = true;
                             }
 
                             // Hide floating button when user types / deletes text
@@ -233,11 +231,14 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
                             if key == Key::ControlLeft || key == Key::ControlRight {
                                 st.c_press_times.clear();
                             }
-                            // Re-arm the translate-replace combo once its keys are released.
+                            // Fire translate-replace once the chord is released, so no
+                            // modifiers are still physically held when the synthetic
+                            // Ctrl+C / Ctrl+V run.
                             if st.tr_fired {
                                 let tr_hotkey = st.config.translate_replace();
                                 if !st.is_translate_replace_combo(&tr_hotkey) {
                                     st.tr_fired = false;
+                                    let _ = app.emit("hotkey_translate_replace", ());
                                 }
                             }
                         }
