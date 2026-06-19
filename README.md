@@ -104,11 +104,20 @@ DeepM/
 
 ### Models
 
-| Variant | Quality | VRAM / RAM |
-|---------|---------|------------|
+Two Tencent translation families are downloadable in-app:
+
+- **HY-MT1.5** — the original, proven model.
+- **Hy-MT2** — newer: 33 languages and more translation modes (terminology, style,
+  context, structured-data protection). Recommended.
+
+Each comes in 1.8B and 7B sizes with Q4_K_M / Q6_K / Q8_0 quants. You can also
+load any external `.gguf` finetune from disk.
+
+| Size / quant | Quality | VRAM / RAM |
+|--------------|---------|------------|
 | 1.8B Q4_K_M | Good, fast | ~1.1 GB |
 | 1.8B Q8_0 | Better | ~1.9 GB |
-| 7B Q4_K_M | Best | ~4.4 GB |
+| 7B Q4_K_M | Best | ~4.6 GB |
 
 ### License
 
@@ -207,11 +216,20 @@ DeepM/
 
 ### Модели
 
-| Вариант | Качество | VRAM / RAM |
-|---------|----------|------------|
+В приложении можно скачать два семейства переводчиков Tencent:
+
+- **HY-MT1.5** — оригинальная, проверенная модель.
+- **Hy-MT2** — новее: 33 языка и больше режимов перевода (терминология, стиль,
+  контекст, защита структурных данных). Рекомендуется.
+
+У каждой — размеры 1.8B и 7B и кванты Q4_K_M / Q6_K / Q8_0. Также можно загрузить
+любой свой `.gguf` файнтюн с диска.
+
+| Размер / квант | Качество | VRAM / RAM |
+|----------------|----------|------------|
 | 1.8B Q4_K_M | Хорошее, быстрое | ~1.1 ГБ |
 | 1.8B Q8_0 | Лучше | ~1.9 ГБ |
-| 7B Q4_K_M | Наилучшее | ~4.4 ГБ |
+| 7B Q4_K_M | Наилучшее | ~4.6 ГБ |
 
 ### Лицензия
 
