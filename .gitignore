@@ -43,3 +43,5 @@ desktop.ini
 
 # Build log
 build.log
+# CUDA slim pack staging
+src-tauri/slim-pack/
