@@ -113,6 +113,10 @@ export type Strings = {
   mode_standard: string;
   mode_contextual: string;
   mode_formatted: string;
+  mode_style: string;
+  mode_structured: string;
+  mode_delimiter: string;
+  mode_style_placeholder: string;
   mode_hint: string;
 
   // Divider
@@ -227,7 +231,11 @@ const en: Strings = {
   mode_standard: "Standard",
   mode_contextual: "Contextual",
   mode_formatted: "Formatted",
-  mode_hint: "Translation mode — Standard: plain direct translation · Contextual: feeds the previous text as context for consistent multi-part translations · Formatted: keeps markup/markdown tags intact",
+  mode_style: "Style",
+  mode_structured: "Keep code/markup",
+  mode_delimiter: "Keep delimiters",
+  mode_style_placeholder: "e.g. formal, casual, literary…",
+  mode_hint: "Translation mode. Hy-MT2 adds Style (enforce a tone), Keep code/markup (don't translate code, keys, variables) and Keep delimiters.",
   divider_reset_hint: "Drag to resize · double-click to centre",
   layout_to_vertical: "Stacked layout",
   layout_to_horizontal: "Side-by-side layout",
@@ -339,7 +347,11 @@ const ru: Strings = {
   mode_standard: "Стандарт",
   mode_contextual: "С контекстом",
   mode_formatted: "С разметкой",
-  mode_hint: "Режим перевода — Стандарт: обычный прямой перевод · С контекстом: передаёт предыдущий текст как контекст для связного перевода частями · С разметкой: сохраняет теги разметки/markdown",
+  mode_style: "Стиль",
+  mode_structured: "Беречь код/разметку",
+  mode_delimiter: "Беречь разделители",
+  mode_style_placeholder: "напр. формальный, разговорный, литературный…",
+  mode_hint: "Режим перевода. Hy-MT2 добавляет Стиль (задать тон), Беречь код/разметку (не переводить код, ключи, переменные) и Беречь разделители.",
   divider_reset_hint: "Потяните для изменения · двойной клик — по центру",
   layout_to_vertical: "Раскладка стопкой",
   layout_to_horizontal: "Раскладка рядом",

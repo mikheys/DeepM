@@ -70,7 +70,10 @@ export type TranslationMode =
   | "standard"
   | "terminology"
   | "contextual"
-  | "formatted";
+  | "formatted"
+  | "style"
+  | "structured"
+  | "delimiter";
 
 export type GlossaryEntry = {
   id: string;

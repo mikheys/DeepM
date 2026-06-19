@@ -137,6 +137,17 @@ async fn cancel_model_download(state: State<'_, AppState>) -> Result<(), String>
     Ok(())
 }
 
+/// Active model family ("HY-MT1.5" / "Hy-MT2"), detected from the loaded model
+/// file path (works for external models too), falling back to settings.
+async fn active_model_version(state: &AppState) -> String {
+    if let ModelStatus::Ready { path } = state.model_manager.get_status().await {
+        let p = path.to_lowercase();
+        if p.contains("mt2") { return "Hy-MT2".to_string(); }
+        if p.contains("mt1.5") { return "HY-MT1.5".to_string(); }
+    }
+    state.settings.lock().await.model_version.clone()
+}
+
 #[tauri::command]
 async fn translate(
     source_text: String,
@@ -144,7 +155,8 @@ async fn translate(
     target_lang: String,
     context: Option<String>,
     glossary_entries: Option<Vec<serde_json::Value>>,
-    formatted: Option<bool>,
+    mode: Option<String>,
+    style: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let resolved_source_lang = if source_lang == "auto" {
@@ -169,7 +181,9 @@ async fn translate(
         target_lang: target_lang.clone(),
         context,
         glossary,
-        formatted: formatted.unwrap_or(false),
+        version: active_model_version(&state).await,
+        mode: mode.unwrap_or_else(|| "standard".to_string()),
+        style,
     };
 
     let result = state.engine.translate(req).await.map_err(|e| e.to_string())?;
@@ -397,7 +411,9 @@ async fn translate_and_replace(
         target_lang: target_lang.clone(),
         context: None,
         glossary,
-        formatted: false,
+        version: active_model_version(&state).await,
+        mode: "standard".to_string(),
+        style: None,
     };
 
     let result = match state.engine.translate(req).await {
@@ -446,7 +462,9 @@ async fn quick_translate(
         target_lang,
         context: None,
         glossary: vec![],
-        formatted: false,
+        version: active_model_version(&state).await,
+        mode: "standard".to_string(),
+        style: None,
     };
     let result = state.engine.translate(req).await.map_err(|e| e.to_string())?;
     Ok(result.translated_text)
@@ -479,7 +497,9 @@ async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::V
         target_lang: tgt.clone(),
         context: None,
         glossary: vec![],
-        formatted: false,
+        version: active_model_version(&state).await,
+        mode: "standard".to_string(),
+        style: None,
     };
     let result = state.engine.translate(req).await.map_err(|e| e.to_string())?;
 

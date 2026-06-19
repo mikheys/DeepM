@@ -4,10 +4,17 @@ import {
   Columns2, Rows2,
   Copy, X,
 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
-import { translate, detectLanguage } from "../api";
+import { translate, detectLanguage, getModelStatus } from "../api";
 import { useI18n } from "../i18n-context";
 import "./TranslatorPanel.css";
+
+// Which translation modes each model family supports.
+function modelVersionFromPath(path: string): "Hy-MT2" | "HY-MT1.5" {
+  const f = (path || "").toLowerCase();
+  return f.includes("mt2") ? "Hy-MT2" : "HY-MT1.5";
+}
 
 type Props = {
   glossaryEntries?: { source: string; target: string; lang_pair: string }[];
@@ -21,7 +28,9 @@ type Props = {
   defaultTargetLang?: string;
 };
 
-type TranslationMode = "standard" | "contextual" | "formatted";
+type TranslationMode =
+  | "standard" | "contextual" | "formatted"
+  | "style" | "structured" | "delimiter";
 
 function oppositePrimary(lang: string): string {
   if (lang === "en") return "ru";
@@ -49,7 +58,19 @@ export default function TranslatorPanel({
   const [splitRatio, setSplitRatio] = useState(50);
   const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
   const [mode, setMode] = useState<TranslationMode>("standard");
+  const [style, setStyle] = useState("");
   const [prevContext, setPrevContext] = useState<string | null>(null);
+  const [modelVersion, setModelVersion] = useState<"Hy-MT2" | "HY-MT1.5">("HY-MT1.5");
+
+  // Detect the active model family so the mode list matches its capabilities.
+  useEffect(() => {
+    const detect = () => getModelStatus().then((s) => {
+      if (s.type === "ready") setModelVersion(modelVersionFromPath((s as any).path ?? ""));
+    }).catch(() => {});
+    detect();
+    const unsub = listen("model_ready", detect);
+    return () => { unsub.then((f) => f()); };
+  }, []);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,7 +116,8 @@ export default function TranslatorPanel({
           target_lang: resolvedTgt,
           context: mode === "contextual" ? (prevContext ?? undefined) : undefined,
           glossary_entries: relevantGlossary.length > 0 ? relevantGlossary : undefined,
-          formatted: mode === "formatted",
+          mode,
+          style: mode === "style" ? style : undefined,
         });
         setTranslatedText(result.translated_text);
         if (result.detected_lang) setDetectedLang(result.detected_lang);
@@ -107,7 +129,7 @@ export default function TranslatorPanel({
         setIsTranslating(false);
       }
     },
-    [glossaryEntries, onTranslated, prevContext, mode]
+    [glossaryEntries, onTranslated, prevContext, mode, style]
   );
 
   const scheduleTranslate = useCallback(
@@ -117,6 +139,12 @@ export default function TranslatorPanel({
     },
     [runTranslate]
   );
+
+  // Re-translate when the mode changes (so switching mode takes effect at once).
+  useEffect(() => {
+    if (sourceText.trim()) scheduleTranslate(sourceText, sourceLang, targetLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const handleSourceChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -214,11 +242,25 @@ export default function TranslatorPanel({
     ? oppositePrimary(detectedLang)
     : null;
 
-  const MODE_OPTIONS: { value: TranslationMode; label: string }[] = [
-    { value: "standard",   label: t.mode_standard },
-    { value: "contextual", label: t.mode_contextual },
-    { value: "formatted",  label: t.mode_formatted },
-  ];
+  const MODE_OPTIONS: { value: TranslationMode; label: string }[] =
+    modelVersion === "Hy-MT2"
+      ? [
+          { value: "standard",   label: t.mode_standard },
+          { value: "contextual", label: t.mode_contextual },
+          { value: "style",      label: t.mode_style },
+          { value: "structured", label: t.mode_structured },
+          { value: "delimiter",  label: t.mode_delimiter },
+        ]
+      : [
+          { value: "standard",   label: t.mode_standard },
+          { value: "contextual", label: t.mode_contextual },
+          { value: "formatted",  label: t.mode_formatted },
+        ];
+
+  // If the active model doesn't support the current mode, fall back to standard.
+  useEffect(() => {
+    if (!MODE_OPTIONS.some((m) => m.value === mode)) setMode("standard");
+  }, [modelVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const swapDisabled = sourceLang === "auto" || targetLang === "auto";
 
@@ -248,6 +290,15 @@ export default function TranslatorPanel({
           ))}
         </select>
       </div>
+      {mode === "style" && (
+        <input
+          className="style-input"
+          placeholder={t.mode_style_placeholder}
+          value={style}
+          onChange={(e) => setStyle(e.target.value)}
+          onBlur={() => { if (sourceText.trim()) scheduleTranslate(sourceText, sourceLang, targetLang); }}
+        />
+      )}
       <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
       <div className="toolbar-spacer" />
       <button

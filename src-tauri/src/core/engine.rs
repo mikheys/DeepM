@@ -143,7 +143,12 @@ pub struct TranslationRequest {
     pub target_lang: String,
     pub context: Option<String>,
     pub glossary: Vec<(String, String)>,
-    pub formatted: bool,
+    /// Active model family ("HY-MT1.5" / "Hy-MT2") — selects the prompt set.
+    pub version: String,
+    /// standard | contextual | formatted | style | structured | delimiter
+    pub mode: String,
+    /// Free-text style for the "style" mode (Hy-MT2).
+    pub style: Option<String>,
 }
 
 pub struct TranslationResult {
@@ -349,12 +354,14 @@ impl TranslationEngine {
         };
 
         let prompt = build_prompt(
+            &req.version,
             &req.source_text,
             &req.source_lang,
             &req.target_lang,
             glossary_opt,
             req.context.as_deref(),
-            req.formatted,
+            &req.mode,
+            req.style.as_deref(),
         );
 
         let chat_req = ChatRequest {

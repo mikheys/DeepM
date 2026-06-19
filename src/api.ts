@@ -12,7 +12,8 @@ export type TranslateArgs = {
   target_lang: string;
   context?: string;
   glossary_entries?: { source: string; target: string }[];
-  formatted?: boolean;
+  mode?: string;
+  style?: string;
 };
 
 export type TranslateResult = {
@@ -27,7 +28,8 @@ export async function translate(args: TranslateArgs): Promise<TranslateResult> {
     targetLang: args.target_lang,
     context: args.context,
     glossaryEntries: args.glossary_entries,
-    formatted: args.formatted ?? false,
+    mode: args.mode ?? "standard",
+    style: args.style,
   });
 }
 
