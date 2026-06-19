@@ -26,6 +26,9 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
+  /* Clip content at the section edge so a narrow pane never bleeds its
+     controls into the other side. */
+  overflow: hidden;
 }
 
 .panel-header-source {
@@ -65,34 +68,19 @@
 }
 
 /*
- * Shared footer row — single border-top spans full width.
+ * Unified footer bar — a single full-width row (mode + char count + layout
+ * toggle). NOT split by the divider, so nothing ever wraps or bleeds across.
  */
 .panel-footer {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
   flex-shrink: 0;
   background: var(--color-bg-secondary);
   border-top: 1px solid var(--color-border);
   min-height: 28px;
-}
-
-.panel-footer-section {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-}
-
-.panel-footer-source {
-  /* subtract half the 9px divider so its centre line sits exactly at --split */
-  flex: 0 0 calc(var(--split, 50%) - 4.5px);
-  min-width: 0;
-}
-
-.panel-footer-target {
-  flex: 1;
-  min-width: 0;
 }
 
 /*
@@ -192,6 +180,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
+  overflow: hidden;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
   min-height: 40px;
@@ -217,9 +206,9 @@
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-text-primary);
-  min-width: 80px;
+  min-width: 0;       /* allow it to shrink instead of overflowing */
   max-width: 180px;
-  flex-shrink: 1;
+  flex: 0 1 auto;
 }
 
 .lang-select:focus {
@@ -333,6 +322,8 @@
 .char-count {
   font-size: 11px;
   color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .mode-control {

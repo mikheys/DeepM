@@ -41,6 +41,8 @@ export type Strings = {
   model_external_title: string;
   model_external_hint: string;
   model_external_placeholder: string;
+  model_add_external: string;
+  model_external_tag: string;
 
   // History
   search_placeholder: string;
@@ -49,6 +51,9 @@ export type Strings = {
   no_matches: string;
   no_history: string;
   confirm_clear_history: string;
+  history_copy_source: string;
+  history_copy_result: string;
+  history_retranslate: string;
 
   // Settings sections
   settings_translation: string;
@@ -81,6 +86,7 @@ export type Strings = {
   exclusions_current: string;
   exclusions_empty: string;
   exclusions_manual: string;
+  exclusions_browse: string;
   exclusions_add: string;
   exclusions_running: string;
   exclusions_refresh: string;
@@ -109,6 +115,8 @@ export type Strings = {
 
   // Divider
   divider_reset_hint: string;
+  layout_to_vertical: string;
+  layout_to_horizontal: string;
 };
 
 const en: Strings = {
@@ -146,9 +154,11 @@ const en: Strings = {
   download_btn: "Download",
   delete_btn: "✕",
   cannot_delete_active: "Cannot delete active model",
-  model_external_title: "External model",
-  model_external_hint: "Load a .gguf file from disk (e.g. a finetune)",
+  model_external_title: "External models",
+  model_external_hint: "Add a .gguf file from disk (e.g. a finetune)",
   model_external_placeholder: "Full path to a .gguf file",
+  model_add_external: "Add model file…",
+  model_external_tag: "external",
 
   search_placeholder: "Search history…",
   clear_all: "Clear all",
@@ -156,6 +166,9 @@ const en: Strings = {
   no_matches: "No matches found.",
   no_history: "No translation history yet.",
   confirm_clear_history: "Clear all translation history?",
+  history_copy_source: "Copy source",
+  history_copy_result: "Copy translation",
+  history_retranslate: "Open & retranslate",
 
   settings_translation: "Translation",
   settings_default_source: "Default source language",
@@ -186,7 +199,8 @@ const en: Strings = {
   exclusions_desc: "In these apps the floating button won't appear and DeepM's global hotkeys are ignored. Useful for terminals (e.g. MobaXterm) or games.",
   exclusions_current: "Excluded",
   exclusions_empty: "No apps excluded yet",
-  exclusions_manual: "Add manually",
+  exclusions_manual: "Add an app",
+  exclusions_browse: "Choose .exe…",
   exclusions_add: "Add",
   exclusions_running: "Running apps",
   exclusions_refresh: "Refresh",
@@ -211,6 +225,8 @@ const en: Strings = {
   mode_formatted: "Formatted",
   mode_hint: "Translation mode — Standard: plain direct translation · Contextual: feeds the previous text as context for consistent multi-part translations · Formatted: keeps markup/markdown tags intact",
   divider_reset_hint: "Drag to resize · double-click to centre",
+  layout_to_vertical: "Stacked layout",
+  layout_to_horizontal: "Side-by-side layout",
 };
 
 const ru: Strings = {
@@ -248,9 +264,11 @@ const ru: Strings = {
   download_btn: "Скачать",
   delete_btn: "✕",
   cannot_delete_active: "Нельзя удалить активную модель",
-  model_external_title: "Сторонняя модель",
-  model_external_hint: "Загрузить файл .gguf с диска (например, файнтюн)",
+  model_external_title: "Сторонние модели",
+  model_external_hint: "Добавить файл .gguf с диска (например, файнтюн)",
   model_external_placeholder: "Полный путь к файлу .gguf",
+  model_add_external: "Добавить файл модели…",
+  model_external_tag: "сторонняя",
 
   search_placeholder: "Поиск по истории…",
   clear_all: "Очистить всё",
@@ -258,6 +276,9 @@ const ru: Strings = {
   no_matches: "Ничего не найдено.",
   no_history: "История переводов пуста.",
   confirm_clear_history: "Удалить всю историю переводов?",
+  history_copy_source: "Копировать оригинал",
+  history_copy_result: "Копировать перевод",
+  history_retranslate: "Открыть и перевести",
 
   settings_translation: "Перевод",
   settings_default_source: "Язык источника по умолчанию",
@@ -288,7 +309,8 @@ const ru: Strings = {
   exclusions_desc: "В этих приложениях плавающая кнопка не появляется, а глобальные горячие клавиши DeepM не срабатывают. Полезно для терминалов (например, MobaXterm) или игр.",
   exclusions_current: "Исключено",
   exclusions_empty: "Пока нет исключённых приложений",
-  exclusions_manual: "Добавить вручную",
+  exclusions_manual: "Добавить приложение",
+  exclusions_browse: "Выбрать .exe…",
   exclusions_add: "Добавить",
   exclusions_running: "Запущенные приложения",
   exclusions_refresh: "Обновить",
@@ -313,6 +335,8 @@ const ru: Strings = {
   mode_formatted: "С разметкой",
   mode_hint: "Режим перевода — Стандарт: обычный прямой перевод · С контекстом: передаёт предыдущий текст как контекст для связного перевода частями · С разметкой: сохраняет теги разметки/markdown",
   divider_reset_hint: "Потяните для изменения · двойной клик — по центру",
+  layout_to_vertical: "Раскладка стопкой",
+  layout_to_horizontal: "Раскладка рядом",
 };
 
 const TRANSLATIONS: Record<Locale, Strings> = { en, ru };

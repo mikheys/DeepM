@@ -121,6 +121,24 @@
   background: rgba(0, 0, 0, 0.15);
 }
 
+.excl-browse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-accent);
+  background: transparent;
+  border: 1px dashed var(--color-accent);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+.excl-browse:hover {
+  background: var(--color-accent-light);
+}
+
 .excl-manual-row {
   display: flex;
   gap: 8px;

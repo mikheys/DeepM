@@ -24,9 +24,9 @@
   width: 184px;
 }
 
-/* Header row: logo or expand button */
+/* Header row: logo or expand button — height matches the translator top bar */
 .sidebar-header {
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,19 +118,22 @@
   text-overflow: ellipsis;
 }
 
-/* Status area */
+/* Status area — height matches the translator bottom bar, content centered */
 .sidebar-bottom {
-  padding: 10px 6px;
+  height: 28px;
+  padding: 0 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   flex-shrink: 0;
 }
 
 .sidebar-expanded .sidebar-bottom {
   flex-direction: row;
-  padding: 10px 12px;
+  justify-content: flex-start;
+  padding: 0 12px;
   gap: 8px;
 }
 

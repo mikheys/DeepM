@@ -829,6 +829,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .setup(move |app| {
             let handle = app.handle().clone();

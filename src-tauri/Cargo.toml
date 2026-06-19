@@ -25,6 +25,7 @@ tauri-plugin-http = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
 
 rdev = "0.5"
 arboard = "3"

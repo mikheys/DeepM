@@ -20,7 +20,7 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
   const [saved, setSaved] = useState(false);
   const [newGlossarySource, setNewGlossarySource] = useState("");
   const [newGlossaryTarget, setNewGlossaryTarget] = useState("");
-  const [newGlossaryPair, setNewGlossaryPair] = useState("en->zh");
+  const [newGlossaryPair, setNewGlossaryPair] = useState("en->ru");
   const [showExclusions, setShowExclusions] = useState(false);
   const [cudaReady, setCudaReady] = useState(true);
   const [nvidiaPresent, setNvidiaPresent] = useState(true);
@@ -144,10 +144,10 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
               onChange={(e) => setNewGlossaryPair(e.target.value)}
               className="glossary-pair-select"
             >
-              <option value="en->zh">EN→ZH</option>
-              <option value="zh->en">ZH→EN</option>
               <option value="en->ru">EN→RU</option>
               <option value="ru->en">RU→EN</option>
+              <option value="en->zh">EN→ZH</option>
+              <option value="zh->en">ZH→EN</option>
             </select>
             <button className="btn-add" onClick={addGlossaryEntry}>{t.settings_add}</button>
           </div>
@@ -197,7 +197,6 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
               <option value={2}>{t.taps_double}</option>
               <option value={3}>{t.taps_triple}</option>
             </select>
-            <span className="settings-hint">{t.settings_copy_taps_hint}</span>
           </div>
 
           <div className="settings-row">

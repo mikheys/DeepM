@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { X, Plus, RefreshCw } from "lucide-react";
+import { X, Plus, RefreshCw, FolderOpen } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { listAppProcesses } from "../api";
 import { useI18n } from "../i18n-context";
 import "./ExclusionsModal.css";
@@ -11,7 +12,8 @@ type Props = {
 };
 
 function normalize(name: string): string {
-  let n = name.trim().toLowerCase();
+  // Match on the executable's base name (that's what the backend reports).
+  let n = (name.split(/[\\/]/).pop() ?? name).trim().toLowerCase();
   if (!n) return "";
   if (!n.endsWith(".exe")) n += ".exe";
   return n;
@@ -51,6 +53,14 @@ export default function ExclusionsModal({ value, onChange, onClose }: Props) {
     setManual("");
   };
 
+  const browse = async () => {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Executable", extensions: ["exe"] }],
+    }).catch(() => null);
+    if (file && typeof file === "string") add(file);
+  };
+
   // Running apps not already excluded
   const available = running.filter(
     (r) => !value.some((v) => v.toLowerCase() === r.toLowerCase())
@@ -85,8 +95,11 @@ export default function ExclusionsModal({ value, onChange, onClose }: Props) {
           </div>
         )}
 
-        {/* Manual add */}
+        {/* Add an app */}
         <div className="excl-section-label">{t.exclusions_manual}</div>
+        <button className="excl-browse" onClick={browse}>
+          <FolderOpen size={14} /> {t.exclusions_browse}
+        </button>
         <div className="excl-manual-row">
           <input
             type="text"
