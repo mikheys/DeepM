@@ -582,6 +582,51 @@ async fn gpu_status() -> Result<serde_json::Value, String> {
     }))
 }
 
+// ── OCR (screenshot translation) ─────────────────────────────────────────────
+
+/// Whether the built-in Windows OCR has at least one language installed.
+#[tauri::command]
+async fn ocr_status() -> Result<bool, String> {
+    tokio::task::spawn_blocking(os_integration::ocr::ocr_available)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// OCR the image currently on the clipboard (a screenshot) → text.
+#[tauri::command]
+async fn ocr_from_clipboard() -> Result<String, String> {
+    tokio::task::spawn_blocking(os_integration::ocr::recognize_clipboard)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// OCR an image file from disk → text.
+#[tauri::command]
+async fn ocr_from_file(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Launches the built-in Windows region snipping tool (Win+Shift+S). The user
+/// snips an area, the screenshot lands on the clipboard → then ocr_from_clipboard.
+#[tauri::command]
+async fn launch_snip() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Clear the clipboard first so polling can detect the NEW snip and not
+        // re-OCR a stale image.
+        let _ = os_integration::write_clipboard("");
+        std::process::Command::new("explorer")
+            .arg("ms-screenclip:")
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Lists executable names of apps with a visible window, for the exclusion picker.
 #[tauri::command]
 async fn list_app_processes() -> Result<Vec<String>, String> {
@@ -1123,6 +1168,10 @@ pub fn run() {
             set_floating_expanded,
             list_app_processes,
             gpu_status,
+            ocr_status,
+            ocr_from_clipboard,
+            ocr_from_file,
+            launch_snip,
             set_autostart,
             get_autostart,
             restart_engine,

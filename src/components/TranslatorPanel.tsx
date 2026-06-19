@@ -5,8 +5,13 @@ import {
   Copy, X,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ScanLine, ImagePlus, ClipboardPaste } from "lucide-react";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
-import { translate, detectLanguage, getModelStatus } from "../api";
+import {
+  translate, detectLanguage, getModelStatus,
+  ocrStatus, ocrFromClipboard, ocrFromFile, launchSnip,
+} from "../api";
 import { useI18n } from "../i18n-context";
 import "./TranslatorPanel.css";
 
@@ -61,6 +66,11 @@ export default function TranslatorPanel({
   const [style, setStyle] = useState("");
   const [prevContext, setPrevContext] = useState<string | null>(null);
   const [modelVersion, setModelVersion] = useState<"Hy-MT2" | "HY-MT1.5">("HY-MT1.5");
+  const [ocrAvailable, setOcrAvailable] = useState(true);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+
+  useEffect(() => { ocrStatus().then(setOcrAvailable).catch(() => setOcrAvailable(false)); }, []);
 
   // Detect the active model family so the mode list matches its capabilities.
   useEffect(() => {
@@ -180,6 +190,69 @@ export default function TranslatorPanel({
     setSourceText(""); setTranslatedText("");
     setCharCount(0); setDetectedLang(null); setPrevContext(null);
   };
+
+  // ── OCR: screenshot / image → source text ────────────────────────────
+  const applyOcr = (text: string) => {
+    const clean = text.trim();
+    if (!clean) { setOcrError(t.ocr_empty); return; }
+    setOcrError(null);
+    setSourceText(clean);
+    setCharCount(clean.length);
+    scheduleTranslate(clean, sourceLang, targetLang);
+  };
+  const ocrErr = (e: unknown) => {
+    const s = String(e);
+    setOcrError(
+      s.includes("no_ocr_language") ? t.ocr_no_lang
+        : s.includes("no_image") ? t.ocr_no_image : s
+    );
+  };
+  const handleClipImage = async () => {
+    setOcrBusy(true); setOcrError(null);
+    try { applyOcr(await ocrFromClipboard()); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
+  };
+  const handleFileImage = async () => {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "bmp", "gif", "webp", "tiff"] }],
+    }).catch(() => null);
+    if (!file || typeof file !== "string") return;
+    setOcrBusy(true); setOcrError(null);
+    try { applyOcr(await ocrFromFile(file)); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
+  };
+  const handleSnip = async () => {
+    setOcrBusy(true); setOcrError(null);
+    await launchSnip().catch(() => {});
+    const start = Date.now();
+    const poll = async () => {
+      if (Date.now() - start > 30000) { setOcrBusy(false); return; }
+      try {
+        const text = await ocrFromClipboard();
+        if (text && text.trim()) { applyOcr(text); setOcrBusy(false); return; }
+      } catch { /* snip not taken yet — keep waiting */ }
+      window.setTimeout(poll, 800);
+    };
+    window.setTimeout(poll, 1500);
+  };
+
+  const ocrOverlay = !sourceText ? (
+    <div className="ocr-overlay">
+      <div className="ocr-actions">
+        <button className="ocr-btn" onClick={handleSnip} disabled={ocrBusy || !ocrAvailable} title={t.ocr_snip_hint}>
+          <ScanLine size={15} /> {t.ocr_snip}
+        </button>
+        <button className="ocr-btn" onClick={handleClipImage} disabled={ocrBusy || !ocrAvailable} title={t.ocr_clipboard_hint}>
+          <ClipboardPaste size={15} /> {t.ocr_clipboard}
+        </button>
+        <button className="ocr-btn" onClick={handleFileImage} disabled={ocrBusy || !ocrAvailable} title={t.ocr_file_hint}>
+          <ImagePlus size={15} /> {t.ocr_file}
+        </button>
+      </div>
+      {ocrBusy && <div className="ocr-status">{t.ocr_working}</div>}
+      {!ocrAvailable && <div className="ocr-status ocr-warn">{t.ocr_no_lang}</div>}
+      {ocrError && <div className="ocr-status ocr-warn">{ocrError}</div>}
+    </div>
+  ) : null;
 
   // Minimum pixel width each header pane needs so its fixed-width controls
   // (lang select + buttons + badge) never get clipped. Source = select + clear;
@@ -376,13 +449,16 @@ export default function TranslatorPanel({
         {/* ── Body with draggable divider ──────────────── */}
         <div className="panel-body">
           <div className="pane-body pane-body-source">
-            <textarea
-              className="pane-textarea"
-              placeholder={t.source_placeholder}
-              value={sourceText}
-              onChange={handleSourceChange}
-              autoFocus
-            />
+            <div className="textarea-wrap">
+              <textarea
+                className="pane-textarea"
+                placeholder={t.source_placeholder}
+                value={sourceText}
+                onChange={handleSourceChange}
+                autoFocus
+              />
+              {ocrOverlay}
+            </div>
           </div>
           <div className="divider divider-h" onMouseDown={startDrag}
             onDoubleClick={resetSplit} title={t.divider_reset_hint} />
@@ -413,13 +489,16 @@ export default function TranslatorPanel({
             <X size={14} />
           </button>
         </div>
-        <textarea
-          className="pane-textarea"
-          placeholder={t.source_placeholder}
-          value={sourceText}
-          onChange={handleSourceChange}
-          autoFocus
-        />
+        <div className="textarea-wrap">
+          <textarea
+            className="pane-textarea"
+            placeholder={t.source_placeholder}
+            value={sourceText}
+            onChange={handleSourceChange}
+            autoFocus
+          />
+          {ocrOverlay}
+        </div>
       </div>
 
       <div className="divider divider-v" onMouseDown={startDrag}

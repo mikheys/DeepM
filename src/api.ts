@@ -132,6 +132,20 @@ export async function gpuStatus(): Promise<GpuStatus> {
   return invoke("gpu_status");
 }
 
+// ── OCR (screenshot translation) ──────────────────────────────────────────
+export async function ocrStatus(): Promise<boolean> {
+  return invoke("ocr_status");
+}
+export async function ocrFromClipboard(): Promise<string> {
+  return invoke("ocr_from_clipboard");
+}
+export async function ocrFromFile(path: string): Promise<string> {
+  return invoke("ocr_from_file", { path });
+}
+export async function launchSnip(): Promise<void> {
+  return invoke("launch_snip");
+}
+
 export async function listAppProcesses(): Promise<string[]> {
   return invoke("list_app_processes");
 }

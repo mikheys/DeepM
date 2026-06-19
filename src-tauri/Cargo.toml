@@ -44,6 +44,17 @@ dirs = "5"
 log = "0.4"
 env_logger = "0.11"
 whatlang = "0.16"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.56", features = [
+    "Media_Ocr",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Globalization",
+    "Foundation",
+    "Foundation_Collections",
+] }
 
 [profile.release]
 panic = "abort"

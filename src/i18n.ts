@@ -13,6 +13,16 @@ export type Strings = {
 
   // Translator
   source_placeholder: string;
+  ocr_snip: string;
+  ocr_snip_hint: string;
+  ocr_clipboard: string;
+  ocr_clipboard_hint: string;
+  ocr_file: string;
+  ocr_file_hint: string;
+  ocr_working: string;
+  ocr_no_lang: string;
+  ocr_no_image: string;
+  ocr_empty: string;
   auto_detect: string;
   translating: string;
   chars: (n: number) => string;
@@ -135,6 +145,16 @@ const en: Strings = {
   no_model: "No model",
 
   source_placeholder: "Enter text to translate…",
+  ocr_snip: "Snip screen",
+  ocr_snip_hint: "Select a screen area to capture and translate its text",
+  ocr_clipboard: "From clipboard image",
+  ocr_clipboard_hint: "Recognise text from a screenshot already on the clipboard",
+  ocr_file: "From image file",
+  ocr_file_hint: "Pick an image file and translate its text",
+  ocr_working: "Recognising…",
+  ocr_no_lang: "OCR language not installed. Add it in Windows Settings → Time & Language → Language.",
+  ocr_no_image: "No image on the clipboard.",
+  ocr_empty: "No text recognised in the image.",
   auto_detect: "Auto-detect",
   translating: "Translating…",
   chars: (n) => `${n} chars`,
@@ -251,6 +271,16 @@ const ru: Strings = {
   no_model: "Нет модели",
 
   source_placeholder: "Введите текст для перевода…",
+  ocr_snip: "Снимок экрана",
+  ocr_snip_hint: "Выделите область экрана — текст распознается и переведётся",
+  ocr_clipboard: "Из скриншота в буфере",
+  ocr_clipboard_hint: "Распознать текст со скриншота, уже скопированного в буфер",
+  ocr_file: "Из файла изображения",
+  ocr_file_hint: "Выбрать картинку и перевести текст с неё",
+  ocr_working: "Распознаю…",
+  ocr_no_lang: "Не установлен языковой пакет OCR. Добавьте его в Параметрах Windows → Время и язык → Язык.",
+  ocr_no_image: "В буфере обмена нет изображения.",
+  ocr_empty: "На изображении не распознан текст.",
   auto_detect: "Авто-определение",
   translating: "Перевод…",
   chars: (n) => `${n} симв.`,

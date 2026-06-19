@@ -1,6 +1,7 @@
 pub mod clipboard_util;
 pub mod floating;
 pub mod hotkeys;
+pub mod ocr;
 pub mod process;
 pub mod tray;
 
