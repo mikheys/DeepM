@@ -153,8 +153,34 @@ export default function TranslatorPanel({
     setCharCount(0); setDetectedLang(null); setPrevContext(null);
   };
 
-  // Double-click the divider to snap it back to the centre (50/50).
-  const resetSplit = () => setSplitRatio(50);
+  // Minimum pixel width each header pane needs so its fixed-width controls
+  // (lang select + buttons + badge) never get clipped. Source = select + clear;
+  // target = swap + select + badge + copy.
+  const MIN_SOURCE_PX = 200;
+  const MIN_TARGET_PX = 250;
+
+  // Clamp a horizontal split ratio so neither pane drops below its minimum,
+  // both while dragging and on window resize.
+  const clampSplit = (ratio: number): number => {
+    const w = containerRef.current?.getBoundingClientRect().width ?? 0;
+    if (w <= 0) return Math.max(20, Math.min(80, ratio));
+    const minR = (MIN_SOURCE_PX / w) * 100;
+    const maxR = 100 - (MIN_TARGET_PX / w) * 100;
+    if (minR >= maxR) return (minR + maxR) / 2; // window too small to satisfy both
+    return Math.max(minR, Math.min(maxR, ratio));
+  };
+
+  // Double-click the divider to snap it back to the centre (clamped to fit).
+  const resetSplit = () => setSplitRatio(clampSplit(50));
+
+  // Re-clamp when the window/container resizes so controls never disappear.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || layout !== "horizontal") return;
+    const ro = new ResizeObserver(() => setSplitRatio((r) => clampSplit(r)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [layout]);
 
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -164,10 +190,10 @@ export default function TranslatorPanel({
       const rect = containerRef.current.getBoundingClientRect();
       if (layout === "horizontal") {
         const ratio = ((ev.clientX - rect.left) / rect.width) * 100;
-        setSplitRatio(Math.max(25, Math.min(75, ratio)));
+        setSplitRatio(clampSplit(ratio));
       } else {
         const ratio = ((ev.clientY - rect.top) / rect.height) * 100;
-        setSplitRatio(Math.max(25, Math.min(75, ratio)));
+        setSplitRatio(Math.max(20, Math.min(80, ratio)));
       }
     };
     const onUp = () => {
