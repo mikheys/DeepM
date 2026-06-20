@@ -26,11 +26,12 @@ All translation happens on your device. The internet is only needed to download 
 - **Translate & Replace** — a hotkey (default `Ctrl+Shift+Alt+T`) translates the selected text in place.
 - **Multi‑copy to app** — press `Ctrl+C` quickly 2 or 3 times (configurable) to send text to the translator window.
 - **Translation modes** — *Standard* (direct), *Contextual* (uses previous text), *Formatted* (keeps markup tags).
+- **Link Mode** *(experimental)* — click a sentence/paragraph on one side to highlight its counterpart on the other (length-based alignment, fully offline).
 - **History & glossary** — stored locally; custom terms are passed to the model.
 - **App exclusions** — disable the button/hotkeys in chosen apps (e.g. terminals, games).
 - **Screenshot / image OCR** — translate text you can't select: snip a screen
-  area, OCR a screenshot from the clipboard, or pick an image file (offline,
-  via the built-in Windows OCR engine).
+  area, OCR a screenshot from the clipboard, or pick an image file. Offline, via
+  a **bundled Tesseract** (rus+eng) — nothing to install separately.
 - **Tray & autostart** — runs in the background; optional start with Windows.
 
 ### Install (end users)
@@ -141,11 +142,12 @@ MIT
 - **Перевод и замена** — горячая клавиша (по умолчанию `Ctrl+Shift+Alt+T`) переводит выделенный текст прямо на месте.
 - **Множественный Ctrl+C** — нажмите `Ctrl+C` быстро 2 или 3 раза (настраивается), чтобы отправить текст в окно переводчика.
 - **Режимы перевода** — *Стандарт* (прямой), *С контекстом* (учитывает предыдущий текст), *С разметкой* (сохраняет теги).
+- **Режим связи** *(экспериментальный)* — клик по предложению/абзацу с одной стороны подсвечивает соответствие с другой (выравнивание по длине, полностью офлайн).
 - **История и глоссарий** — хранятся локально; свои термины передаются модели.
 - **Исключения приложений** — отключить кнопку/хоткеи в выбранных программах (терминалы, игры).
 - **OCR скриншотов / картинок** — перевод невыделяемого текста: снимок области
-  экрана, распознавание скриншота из буфера или выбор файла изображения
-  (офлайн, через встроенный в Windows OCR-движок).
+  экрана, распознавание скриншота из буфера или выбор файла изображения.
+  Офлайн, через **встроенный Tesseract** (рус+англ) — ничего доустанавливать не нужно.
 - **Трей и автозапуск** — работает в фоне; опциональный старт с Windows.
 
 ### Установка (для пользователей)

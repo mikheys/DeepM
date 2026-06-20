@@ -55,3 +55,9 @@ rapidocr-check.log
 etap-1-mvp-yadro-i-model.md
 etap-2-sistemnaya-integraciya.md
 etap-3-dizayn-i-dopolnitelnye-funkcii.md
+
+# ── Local art sources / scratch (not shipped; icons live in src-tauri/icons) ──
+/*.ai
+/*.svg
+*.tmp
+~*
