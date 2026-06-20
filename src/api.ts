@@ -132,19 +132,17 @@ export async function gpuStatus(): Promise<GpuStatus> {
   return invoke("gpu_status");
 }
 
-// ── OCR (screenshot translation) ──────────────────────────────────────────
-export async function ocrStatus(engine: string): Promise<boolean> {
-  return invoke("ocr_status", { engine });
+// ── OCR (screenshot translation; bundled Tesseract) ───────────────────────
+export async function ocrStatus(): Promise<boolean> {
+  return invoke("ocr_status");
 }
-export async function ocrFromClipboard(engine: string): Promise<string> {
-  return invoke("ocr_from_clipboard", { engine });
+export async function ocrFromClipboard(): Promise<string> {
+  return invoke("ocr_from_clipboard");
 }
-export async function ocrFromFile(engine: string, path: string): Promise<string> {
-  return invoke("ocr_from_file", { engine, path });
+export async function ocrFromFile(path: string): Promise<string> {
+  return invoke("ocr_from_file", { path });
 }
-export async function ocrTest(path: string): Promise<import("./types").OcrTestResult[]> {
-  return invoke("ocr_test", { path });
-}
+/** Hidden diagnostic (no UI entry point) — sweeps tessdata x PSM. */
 export async function ocrTestAll(path: string): Promise<import("./types").OcrTestResult[]> {
   return invoke("ocr_test_all", { path });
 }

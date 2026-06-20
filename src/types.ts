@@ -110,14 +110,6 @@ export type AppSettings = {
   triple_copy_interval_ms: number;
   triple_copy_count: number;
   floating_exclusions: string[];
-  /** OCR backend: "rapidocr" (default) | "tesseract". */
-  ocr_engine: string;
-  /** OCR image preprocessing: "original" | "resize" | "grayscale" | "resize_grayscale". */
-  ocr_preprocess: string;
-  /** Tesseract language data set: "standard" | "fast" | "best". */
-  tesseract_data: string;
-  /** Tesseract page segmentation mode: "3" | "6" | "11". */
-  tesseract_psm: string;
   locale: string;
 };
 

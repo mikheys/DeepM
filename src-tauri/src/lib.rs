@@ -584,29 +584,18 @@ async fn gpu_status() -> Result<serde_json::Value, String> {
 
 // ── OCR (screenshot translation) ─────────────────────────────────────────────
 
-/// Reads OCR options (preprocess mode, Tesseract data variant, PSM) from settings.
-async fn ocr_opts(state: &AppState) -> (os_integration::ocr::PreprocessMode, String, u32) {
-    let s = state.settings.lock().await;
-    (
-        os_integration::ocr::PreprocessMode::parse(&s.ocr_preprocess),
-        s.tesseract_data.clone(),
-        s.tesseract_psm.parse().unwrap_or(6),
-    )
-}
-
-/// Whether the chosen OCR backend is usable right now.
+/// Whether the bundled Tesseract is usable right now.
 #[tauri::command]
-async fn ocr_status(engine: String) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || os_integration::ocr::engine_status(&engine))
+async fn ocr_status() -> Result<bool, String> {
+    tokio::task::spawn_blocking(os_integration::ocr::engine_status)
         .await
         .map_err(|e| e.to_string())
 }
 
 /// OCR the image currently on the clipboard (a screenshot) → normalized text.
 #[tauri::command]
-async fn ocr_from_clipboard(engine: String, state: State<'_, AppState>) -> Result<String, String> {
-    let (prep, tess, psm) = ocr_opts(&state).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine, prep, &tess, psm))
+async fn ocr_from_clipboard() -> Result<String, String> {
+    let text = tokio::task::spawn_blocking(os_integration::ocr::recognize_clipboard)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -615,54 +604,32 @@ async fn ocr_from_clipboard(engine: String, state: State<'_, AppState>) -> Resul
 
 /// OCR an image file from disk → normalized text.
 #[tauri::command]
-async fn ocr_from_file(engine: String, path: String, state: State<'_, AppState>) -> Result<String, String> {
-    let (prep, tess, psm) = ocr_opts(&state).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path, prep, &tess, psm))
+async fn ocr_from_file(path: String) -> Result<String, String> {
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     Ok(core::ocr_normalize::normalize_ocr_text(&text))
 }
 
-/// Turns OcrTestResult rows (raw text) into JSON with the normalized text added.
-fn enrich_ocr_results(results: Vec<os_integration::ocr::OcrTestResult>) -> serde_json::Value {
-    let rows: Vec<serde_json::Value> = results
-        .into_iter()
-        .map(|r| {
-            let normalized = core::ocr_normalize::normalize_ocr_text(&r.text);
-            serde_json::json!({
-                "engine": r.engine,
-                "model": r.model,
-                "preprocess": r.preprocess,
-                "ms": r.ms,
-                "text": r.text,
-                "normalized": normalized,
-                "error": r.error,
-            })
-        })
-        .collect();
-    serde_json::json!(rows)
-}
-
-/// OCR Test Mode: run both engines on one image with the current preprocessing,
-/// returning raw + normalized text, timing, model and preprocessing for each.
-#[tauri::command]
-async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (prep, tess, psm) = ocr_opts(&state).await;
-    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess, psm))
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(enrich_ocr_results(results))
-}
-
-/// OCR Test Mode "run all": RapidOCR once + Tesseract swept over every installed
-/// data set x PSM, so the best config can be compared / copied as text.
+/// Hidden OCR diagnostic: sweep installed data sets x PSM on one image, with raw
+/// + normalized text, timing and model per row.
 #[tauri::command]
 async fn ocr_test_all(path: String) -> Result<serde_json::Value, String> {
     let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test_all(&path))
         .await
         .map_err(|e| e.to_string())?;
-    Ok(enrich_ocr_results(results))
+    let rows: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|r| {
+            let normalized = core::ocr_normalize::normalize_ocr_text(&r.text);
+            serde_json::json!({
+                "engine": r.engine, "model": r.model, "preprocess": r.preprocess,
+                "ms": r.ms, "text": r.text, "normalized": normalized, "error": r.error,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!(rows))
 }
 
 /// Launches the built-in Windows region snipping tool (Win+Shift+S). The user
@@ -1232,7 +1199,6 @@ pub fn run() {
             ocr_status,
             ocr_from_clipboard,
             ocr_from_file,
-            ocr_test,
             ocr_test_all,
             launch_snip,
             set_autostart,

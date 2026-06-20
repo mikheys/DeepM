@@ -213,9 +213,9 @@ function MainApp() {
             onClose={() => setView("translator")}
             locale={locale}
             onLocaleChange={(l) => setLocale(l)}
-            onOpenOcrTest={() => setView("ocr_test")}
           />
         )}
+        {/* OCR Test Mode kept for diagnostics; no UI entry point (re-add a button to open). */}
         {view === "ocr_test" && <OcrTestPanel onBack={() => setView("settings")} />}
       </main>
     </div>

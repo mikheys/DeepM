@@ -39,10 +39,7 @@
     "resources": [
       "engine/*",
       "tesseract/*",
-      "tesseract/tessdata-standard/*",
-      "tesseract/tessdata-fast/*",
-      "tesseract/tessdata-best/*",
-      "rapidocr/*"
+      "tesseract/tessdata-standard/*"
     ],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },

@@ -1,13 +1,12 @@
-//! Screenshot / image OCR with two selectable backends:
-//! - "rapidocr"  : PP-OCRv5 via ONNX (oar-ocr). Default. Best local quality
-//!                 for Russian; ships its default Cyrillic models bundled.
-//! - "tesseract" : a Tesseract CLI bundled inside the app (rus+eng).
+//! Screenshot / image OCR via a Tesseract CLI bundled inside the app (rus+eng).
 //!
-//! Pipeline: image → preprocess → OCR (raw text). Text normalization happens
-//! one level up (lib.rs) so Test Mode can show raw vs normalized.
+//! Fixed configuration (decided by benchmarking): tessdata "standard", PSM 6,
+//! OEM 1 (LSTM), with resize+grayscale preprocessing. No engine choice, no
+//! knobs — it's a translator, not an OCR workbench.
 //!
-//! Everything here is Windows-only (Tesseract CLI + clipboard image); non-
-//! Windows targets get stubs at the bottom.
+//! Pipeline: image → preprocess → Tesseract (raw text). Text normalization
+//! happens one level up (lib.rs). `ocr_test_all` is a hidden diagnostic that
+//! sweeps the installed data sets × PSM.
 
 use anyhow::{anyhow, Result};
 #[cfg(target_os = "windows")]
@@ -15,85 +14,13 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 
-// ── Preprocessing ─────────────────────────────────────────────────────────────
-
-/// Image preprocessing applied before OCR. Exposed so the UI can A/B test which
-/// works best for mixed RU/EN screenshots (grayscale can hurt colour-trained
-/// PP-OCR models, so "resize" without grayscale is worth comparing).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PreprocessMode {
-    /// Per-engine optimum: Tesseract → resize+grayscale, RapidOCR → resize.
-    Auto,
-    Original,
-    Resize,
-    Grayscale,
-    ResizeGrayscale,
-}
-
-impl PreprocessMode {
-    pub fn parse(s: &str) -> Self {
-        match s {
-            "original" => PreprocessMode::Original,
-            "resize" => PreprocessMode::Resize,
-            "grayscale" => PreprocessMode::Grayscale,
-            "resize_grayscale" => PreprocessMode::ResizeGrayscale,
-            _ => PreprocessMode::Auto,
-        }
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            PreprocessMode::Auto => "auto",
-            PreprocessMode::Original => "original",
-            PreprocessMode::Resize => "resize",
-            PreprocessMode::Grayscale => "grayscale",
-            PreprocessMode::ResizeGrayscale => "resize+grayscale",
-        }
-    }
-    /// Resolve "Auto" to the concrete mode each engine performs best with.
-    pub fn resolve(self, engine: &str) -> PreprocessMode {
-        match self {
-            PreprocessMode::Auto => {
-                if engine == "tesseract" {
-                    PreprocessMode::ResizeGrayscale
-                } else {
-                    PreprocessMode::Resize
-                }
-            }
-            m => m,
-        }
-    }
-}
-
-/// Upscales small images (OCR is tuned for ~300dpi) and/or grayscales them.
-#[cfg(target_os = "windows")]
-fn preprocess(img: image::DynamicImage, mode: PreprocessMode) -> image::DynamicImage {
-    use image::GenericImageView;
-    let do_resize = matches!(mode, PreprocessMode::Resize | PreprocessMode::ResizeGrayscale);
-    let do_gray = matches!(mode, PreprocessMode::Grayscale | PreprocessMode::ResizeGrayscale);
-
-    let img = if do_resize {
-        let (w, h) = img.dimensions();
-        let longest = w.max(h);
-        let scale = if longest < 1000 { 3 } else if longest < 2200 { 2 } else { 1 };
-        if scale > 1 {
-            img.resize(w * scale, h * scale, image::imageops::FilterType::Lanczos3)
-        } else {
-            img
-        }
-    } else {
-        img
-    };
-
-    if do_gray { img.grayscale() } else { img }
-}
-
 // ── Resource directory (set once at startup) ──────────────────────────────────
 
 #[cfg(target_os = "windows")]
 static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-/// Called once from setup() with Tauri's resolved resource dir, so bundled
-/// Tesseract / RapidOCR models can be found next to the installed exe.
+/// Called once from setup() with Tauri's resolved resource dir, so the bundled
+/// Tesseract can be found next to the installed exe.
 #[cfg(target_os = "windows")]
 pub fn set_resource_dir(dir: PathBuf) {
     let _ = RESOURCE_DIR.set(dir);
@@ -104,54 +31,42 @@ fn resource_dir() -> Option<PathBuf> {
     RESOURCE_DIR.get().cloned()
 }
 
-// ── Dispatch ──────────────────────────────────────────────────────────────────
+// ── Preprocessing ─────────────────────────────────────────────────────────────
 
+/// Upscales small images (Tesseract goes blind on small text) and grayscales.
 #[cfg(target_os = "windows")]
-fn run_engine(
-    engine: &str,
-    img: image::DynamicImage,
-    prep: PreprocessMode,
-    tess_variant: &str,
-    tess_psm: u32,
-) -> Result<String> {
-    let prepared = preprocess(img, prep.resolve(engine));
-    match engine {
-        "tesseract" => tesseract::recognize(prepared, tess_variant, tess_psm),
-        _ => {
-            // "rapidocr" (default)
-            #[cfg(feature = "rapidocr")]
-            { rapidocr::recognize(prepared) }
-            #[cfg(not(feature = "rapidocr"))]
-            { let _ = prepared; Err(anyhow!("rapidocr_unavailable")) }
-        }
-    }
+fn preprocess(img: image::DynamicImage) -> image::DynamicImage {
+    use image::GenericImageView;
+    let (w, h) = img.dimensions();
+    let longest = w.max(h);
+    let scale = if longest < 1000 { 3 } else if longest < 2200 { 2 } else { 1 };
+    let img = if scale > 1 {
+        img.resize(w * scale, h * scale, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+    img.grayscale()
 }
 
-/// True if the given OCR backend is usable right now.
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/// True if the bundled Tesseract is usable right now.
 #[cfg(target_os = "windows")]
-pub fn engine_status(engine: &str) -> bool {
-    match engine {
-        "tesseract" => tesseract::available(),
-        _ => {
-            #[cfg(feature = "rapidocr")]
-            { rapidocr::available() }
-            #[cfg(not(feature = "rapidocr"))]
-            { false }
-        }
-    }
+pub fn engine_status() -> bool {
+    tesseract::available()
 }
 
 /// OCR a screenshot already on the clipboard.
 #[cfg(target_os = "windows")]
-pub fn recognize_clipboard(engine: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Result<String> {
-    run_engine(engine, clipboard_image()?, prep, tess_variant, tess_psm)
+pub fn recognize_clipboard() -> Result<String> {
+    tesseract::recognize(preprocess(clipboard_image()?), "standard", 6)
 }
 
 /// OCR an image file from disk.
 #[cfg(target_os = "windows")]
-pub fn recognize_file(engine: &str, path: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Result<String> {
+pub fn recognize_file(path: &str) -> Result<String> {
     let img = image::open(path).map_err(|e| anyhow!("open image: {e}"))?;
-    run_engine(engine, img, prep, tess_variant, tess_psm)
+    tesseract::recognize(preprocess(img), "standard", 6)
 }
 
 #[cfg(target_os = "windows")]
@@ -165,9 +80,9 @@ fn clipboard_image() -> Result<image::DynamicImage> {
     Ok(image::DynamicImage::ImageRgba8(buf))
 }
 
-// ── Test Mode ─────────────────────────────────────────────────────────────────
+// ── Test Mode (hidden diagnostic) ─────────────────────────────────────────────
 
-/// One engine's result for the OCR Test Mode comparison panel.
+/// One row of the Test Mode comparison.
 #[derive(serde::Serialize)]
 pub struct OcrTestResult {
     pub engine: String,
@@ -178,94 +93,47 @@ pub struct OcrTestResult {
     pub error: Option<String>,
 }
 
-#[cfg(target_os = "windows")]
-fn engine_model_label(engine: &str, tess_variant: &str) -> String {
-    match engine {
-        "tesseract" => format!("Tesseract rus+eng ({tess_variant})"),
-        _ => {
-            #[cfg(feature = "rapidocr")]
-            { rapidocr::model_label() }
-            #[cfg(not(feature = "rapidocr"))]
-            { "RapidOCR (unavailable)".to_string() }
-        }
-    }
-}
-
-/// Runs one engine config and appends the result row.
-#[cfg(target_os = "windows")]
-fn run_and_push(
-    out: &mut Vec<OcrTestResult>,
-    path: &str,
-    engine: &str,
-    model: String,
-    prep: PreprocessMode,
-    tess_variant: &str,
-    tess_psm: u32,
-) {
-    let img = match image::open(path) {
-        Ok(i) => i,
-        Err(e) => {
-            out.push(OcrTestResult {
-                engine: engine.into(),
-                model,
-                preprocess: prep.resolve(engine).label().into(),
-                ms: 0,
-                text: String::new(),
-                error: Some(format!("open image: {e}")),
-            });
-            return;
-        }
-    };
-    let started = std::time::Instant::now();
-    let result = run_engine(engine, img, prep, tess_variant, tess_psm);
-    let ms = started.elapsed().as_millis();
-    let (text, error) = match result {
-        Ok(t) => (t, None),
-        Err(e) => (String::new(), Some(e.to_string())),
-    };
-    out.push(OcrTestResult {
-        engine: engine.into(),
-        model,
-        preprocess: prep.resolve(engine).label().into(),
-        ms,
-        text,
-        error,
-    });
-}
-
-/// Tuning sweep for Test Mode: RapidOCR once (its model/prep are fixed) plus
-/// Tesseract across every installed data set x PSM {3,6,11}, so the best
-/// Tesseract config can be found empirically. Normalization added by lib.rs.
+/// Sweeps every installed data set × PSM {3,6,11} on one image (diagnostic).
 #[cfg(target_os = "windows")]
 pub fn ocr_test_all(path: &str) -> Vec<OcrTestResult> {
     let mut out = Vec::new();
-
-    // RapidOCR — fixed cyrillic model, resize prep (its optimum); one run.
-    run_and_push(&mut out, path, "rapidocr", engine_model_label("rapidocr", ""), PreprocessMode::Resize, "", 6);
-
-    // Tesseract — sweep installed data sets x PSM, resize+grayscale prep.
     for variant in ["standard", "fast", "best"] {
         if !tesseract::has_data(variant) {
             continue;
         }
         for psm in [3u32, 6, 11] {
             let model = format!("Tesseract {variant} psm{psm}");
-            run_and_push(&mut out, path, "tesseract", model, PreprocessMode::ResizeGrayscale, variant, psm);
+            let img = match image::open(path) {
+                Ok(i) => i,
+                Err(e) => {
+                    out.push(OcrTestResult {
+                        engine: "tesseract".into(),
+                        model,
+                        preprocess: "resize+grayscale".into(),
+                        ms: 0,
+                        text: String::new(),
+                        error: Some(format!("open image: {e}")),
+                    });
+                    continue;
+                }
+            };
+            let started = std::time::Instant::now();
+            let result = tesseract::recognize(preprocess(img), variant, psm);
+            let ms = started.elapsed().as_millis();
+            let (text, error) = match result {
+                Ok(t) => (t, None),
+                Err(e) => (String::new(), Some(e.to_string())),
+            };
+            out.push(OcrTestResult {
+                engine: "tesseract".into(),
+                model,
+                preprocess: "resize+grayscale".into(),
+                ms,
+                text,
+                error,
+            });
         }
     }
-    out
-}
-
-/// Runs both engines on one image with the given settings (current-config view).
-#[cfg(target_os = "windows")]
-pub fn ocr_test(path: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Vec<OcrTestResult> {
-    let mut out = Vec::new();
-    run_and_push(&mut out, path, "rapidocr", engine_model_label("rapidocr", ""), prep, "", tess_psm);
-    run_and_push(
-        &mut out, path, "tesseract",
-        format!("{} psm{tess_psm}", engine_model_label("tesseract", tess_variant)),
-        prep, tess_variant, tess_psm,
-    );
     out
 }
 
@@ -283,8 +151,6 @@ mod tesseract {
     /// `tesseract/`), then a dev path, then PATH / Program Files as a fallback.
     fn exe() -> Option<PathBuf> {
         let mut candidates: Vec<PathBuf> = Vec::new();
-        // DEV: prefer the freshly-staged source folder over target/<profile>,
-        // which may hold stale placeholder copies of the resources.
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join("tesseract.exe"));
@@ -297,7 +163,6 @@ mod tesseract {
                 return Some(c.clone());
             }
         }
-        // Fallbacks: PATH, then the default UB-Mannheim install dir.
         if Command::new("tesseract").arg("--version").no_window().output().is_ok() {
             return Some(PathBuf::from("tesseract"));
         }
@@ -318,7 +183,7 @@ mod tesseract {
         tessdata_dir(variant).is_some()
     }
 
-    /// Bundled tessdata dir for the chosen variant ("standard"|"fast"|"best"), if present.
+    /// Bundled tessdata dir for the chosen variant, if present (non-empty files).
     fn tessdata_dir(variant: &str) -> Option<PathBuf> {
         let sub = match variant {
             "fast" => "tessdata-fast",
@@ -333,7 +198,6 @@ mod tesseract {
         if let Some(r) = resource_dir() {
             candidates.push(r.join("tesseract").join(sub));
         }
-        // A non-empty traineddata file must be present (placeholder copies are 0 bytes).
         candidates.into_iter().find(|d| {
             d.join("eng.traineddata").metadata().map(|m| m.len() > 0).unwrap_or(false)
         })
@@ -375,13 +239,9 @@ mod tesseract {
         let psm = if (3..=13).contains(&psm) { psm } else { 6 };
         let psm_s = psm.to_string();
         let mut cmd = Command::new(&exe);
-        // --oem 1 = LSTM engine only (best/fast data are LSTM-only anyway).
+        // --oem 1 = LSTM engine only. Dictionaries off so mixed RU/EN technical
+        // tokens (rec-модели) read literally; keep inter-word spaces.
         cmd.arg(&tmp).arg("stdout").args(["-l", &langs, "--oem", "1", "--psm", &psm_s]);
-        // Mixed RU/EN text (esp. Latin-Cyrillic hyphenated tokens like
-        // "rec-модели") is mangled when Tesseract coerces a word toward one
-        // language's dictionary. Turning the dictionaries off makes it read
-        // character-by-character, which is what we want for technical text;
-        // also keep inter-word spaces.
         cmd.args(["-c", "preserve_interword_spaces=1"]);
         cmd.args(["-c", "load_system_dawg=0"]);
         cmd.args(["-c", "load_freq_dawg=0"]);
@@ -413,116 +273,13 @@ mod tesseract {
     }
 }
 
-// ── RapidOCR backend (PP-OCRv5 via ONNX) ──────────────────────────────────────
-#[cfg(all(target_os = "windows", feature = "rapidocr"))]
-mod rapidocr {
-    use super::resource_dir;
-    use anyhow::{anyhow, Result};
-    use std::path::{Path, PathBuf};
-
-    fn has_local(d: &Path) -> bool {
-        let nonempty = |p: std::path::PathBuf| p.metadata().map(|m| m.len() > 0).unwrap_or(false);
-        nonempty(d.join("det.onnx")) && nonempty(d.join("rec.onnx")) && nonempty(d.join("dict.txt"))
-    }
-
-    /// User override dir: drop a custom PP-OCR set here to replace the bundled one.
-    fn user_dir() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_default()
-            .join("DeepM")
-            .join("models")
-            .join("rapidocr")
-    }
-
-    /// Bundled default models (PP-OCRv5 Cyrillic) shipped as a Tauri resource.
-    fn bundled_dir() -> Option<PathBuf> {
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        // DEV: prefer the freshly-staged source folder over target/<profile>.
-        #[cfg(debug_assertions)]
-        if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
-            candidates.push(PathBuf::from(d).join("rapidocr"));
-        }
-        if let Some(r) = resource_dir() {
-            candidates.push(r.join("rapidocr"));
-        }
-        candidates.into_iter().find(|d| has_local(d))
-    }
-
-    /// Resolve the active model dir: user override wins, else bundled default.
-    fn resolve() -> Option<(PathBuf, bool)> {
-        let u = user_dir();
-        if has_local(&u) {
-            return Some((u, true));
-        }
-        bundled_dir().map(|d| (d, false))
-    }
-
-    pub fn available() -> bool {
-        resolve().is_some()
-    }
-
-    pub fn model_label() -> String {
-        match resolve() {
-            Some((_, true)) => "RapidOCR (custom models)".to_string(),
-            Some((_, false)) => "RapidOCR PP-OCRv5 cyrillic".to_string(),
-            None => "RapidOCR (models missing)".to_string(),
-        }
-    }
-
-    pub fn recognize(img: image::DynamicImage) -> Result<String> {
-        use oar_ocr::prelude::*;
-
-        let (dir, custom) = resolve().ok_or_else(|| {
-            eprintln!("[RapidOCR] models MISSING (no bundled and no user models)");
-            anyhow!("rapidocr_models_missing")
-        })?;
-        let det = dir.join("det.onnx").to_string_lossy().into_owned();
-        let rec = dir.join("rec.onnx").to_string_lossy().into_owned();
-        let dict = dir.join("dict.txt").to_string_lossy().into_owned();
-        eprintln!(
-            "[RapidOCR] {} models: {}",
-            if custom { "CUSTOM" } else { "bundled PP-OCRv5 cyrillic" },
-            dir.display()
-        );
-
-        let ocr = OAROCRBuilder::new(det, rec, dict).build().map_err(|e| {
-            eprintln!("[RapidOCR] init FAILED: {e}");
-            anyhow!("rapidocr init: {e}")
-        })?;
-
-        let tmp = std::env::temp_dir().join(format!("deepm_rocr_{}.png", std::process::id()));
-        img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
-        let loaded = load_image(&tmp).map_err(|e| anyhow!("load: {e}"));
-        let _ = std::fs::remove_file(&tmp);
-        let loaded = loaded?;
-
-        let results = ocr.predict(vec![loaded]).map_err(|e| {
-            eprintln!("[RapidOCR] predict FAILED: {e}");
-            anyhow!("rapidocr predict: {e}")
-        })?;
-        let mut lines: Vec<String> = Vec::new();
-        if let Some(r) = results.get(0) {
-            for region in &r.text_regions {
-                if let Some((text, _conf)) = region.text_with_confidence() {
-                    lines.push(text.to_string());
-                }
-            }
-        }
-        Ok(lines.join("\n"))
-    }
-}
-
 // ── Non-Windows stubs ─────────────────────────────────────────────────────────
 #[cfg(not(target_os = "windows"))]
-pub fn engine_status(_engine: &str) -> bool { false }
+pub fn engine_status() -> bool { false }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_clipboard(_engine: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Result<String> {
-    Err(anyhow!("OCR is Windows-only"))
-}
+pub fn recognize_clipboard() -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_file(_engine: &str, _path: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Result<String> {
-    Err(anyhow!("OCR is Windows-only"))
-}
+pub fn recognize_file(_path: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
 #[cfg(not(target_os = "windows"))]
 #[derive(serde::Serialize)]
 pub struct OcrTestResult {
@@ -533,7 +290,5 @@ pub struct OcrTestResult {
     pub text: String,
     pub error: Option<String>,
 }
-#[cfg(not(target_os = "windows"))]
-pub fn ocr_test(_path: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Vec<OcrTestResult> { Vec::new() }
 #[cfg(not(target_os = "windows"))]
 pub fn ocr_test_all(_path: &str) -> Vec<OcrTestResult> { Vec::new() }

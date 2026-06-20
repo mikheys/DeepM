@@ -46,15 +46,6 @@ env_logger = "0.11"
 whatlang = "0.16"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
-# RapidOCR (PP-OCRv5 via ONNX) — the default OCR engine. ort statically links
-# ONNX Runtime (downloaded at build), so no extra DLL ships. Kept behind a
-# feature so `--no-default-features` still builds a slim binary without ONNX.
-oar-ocr = { version = "=0.6.3", optional = true }
-
-[features]
-default = ["rapidocr"]
-rapidocr = ["dep:oar-ocr"]
-
 [profile.release]
 panic = "abort"
 codegen-units = 1
