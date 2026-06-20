@@ -219,7 +219,11 @@ mod rapidocr {
     use std::path::PathBuf;
 
     /// Models live next to the GGUF models: <data_local>/DeepM/models/rapidocr/
-    /// (det.onnx, rec.onnx, dict.txt — use a Cyrillic PP-OCR recognition model).
+    /// (det.onnx, rec.onnx, dict.txt). For Russian use the East-Slavic PP-OCRv5
+    /// set from ModelScope greatv/oar-ocr: pp-ocrv5_mobile_det.onnx,
+    /// eslav_pp-ocrv5_mobile_rec.onnx, ppocrv5_eslav_dict.txt (renamed to the
+    /// det/rec/dict names above). oar-ocr 0.6.3 does NOT auto-download — the
+    /// files must be present locally.
     fn models_dir() -> PathBuf {
         dirs::data_local_dir()
             .unwrap_or_default()
@@ -242,33 +246,24 @@ mod rapidocr {
         use oar_ocr::prelude::*;
 
         let d = models_dir();
-        // Prefer custom local models (e.g. a Cyrillic PP-OCR set dropped into
-        // models/rapidocr/); otherwise use the default PP-OCRv6 names, which
-        // oar-ocr fetches from ModelScope automatically.
-        let local = has_local(&d);
-        let (det, rec, dict) = if local {
-            (
-                d.join("det.onnx").to_string_lossy().into_owned(),
-                d.join("rec.onnx").to_string_lossy().into_owned(),
-                d.join("dict.txt").to_string_lossy().into_owned(),
-            )
-        } else {
-            (
-                "pp-ocrv6_small_det.onnx".to_string(),
-                "pp-ocrv6_small_rec.onnx".to_string(),
-                "ppocrv6_dict.txt".to_string(),
-            )
-        };
+        // oar-ocr 0.6.3 expects real local file paths (no ModelScope auto-
+        // download). Require det.onnx / rec.onnx / dict.txt to be present.
+        eprintln!("[RapidOCR] models dir: {}", d.display());
+        if !has_local(&d) {
+            eprintln!(
+                "[RapidOCR] models MISSING — expected det.onnx, rec.onnx, dict.txt in the dir above"
+            );
+            return Err(anyhow!("rapidocr_models_missing"));
+        }
+        let det = d.join("det.onnx").to_string_lossy().into_owned();
+        let rec = d.join("rec.onnx").to_string_lossy().into_owned();
+        let dict = d.join("dict.txt").to_string_lossy().into_owned();
 
         // eprintln! always prints to the terminal running `npm run dev:rapidocr`
         // (unlike log::info which is hidden by default), so there's visible
-        // feedback about model loading/downloading.
-        eprintln!("[RapidOCR] models dir: {}", d.display());
-        eprintln!(
-            "[RapidOCR] using {} models: det={det}, rec={rec}, dict={dict}",
-            if local { "LOCAL" } else { "auto-download (ModelScope)" }
-        );
-        eprintln!("[RapidOCR] building pipeline (first run downloads models — can take a while)…");
+        // feedback about model loading.
+        eprintln!("[RapidOCR] using LOCAL models: det={det}, rec={rec}, dict={dict}");
+        eprintln!("[RapidOCR] building pipeline…");
 
         let ocr = OAROCRBuilder::new(det, rec, dict).build().map_err(|e| {
             eprintln!("[RapidOCR] init FAILED: {e}");
