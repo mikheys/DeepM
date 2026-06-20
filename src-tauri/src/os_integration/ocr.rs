@@ -31,6 +31,16 @@ fn resource_dir() -> Option<PathBuf> {
     RESOURCE_DIR.get().cloned()
 }
 
+/// Directory the executable lives in. In a packaged build the bundled
+/// `tesseract/` folder sits next to the exe (same as `engine/`), which is the
+/// reliable production path — `resource_dir()` can point elsewhere.
+#[cfg(target_os = "windows")]
+fn exe_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
 // ── Preprocessing ─────────────────────────────────────────────────────────────
 
 /// Upscales small images (Tesseract goes blind on small text) and grayscales.
@@ -140,7 +150,7 @@ pub fn ocr_test_all(path: &str) -> Vec<OcrTestResult> {
 // ── Tesseract CLI backend (bundled inside the app) ────────────────────────────
 #[cfg(target_os = "windows")]
 mod tesseract {
-    use super::resource_dir;
+    use super::{exe_dir, resource_dir};
     use anyhow::{anyhow, Result};
     use std::path::PathBuf;
     use std::process::Command;
@@ -154,6 +164,10 @@ mod tesseract {
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join("tesseract.exe"));
+        }
+        // Production: bundled next to the exe (like engine/).
+        if let Some(d) = exe_dir() {
+            candidates.push(d.join("tesseract").join("tesseract.exe"));
         }
         if let Some(r) = resource_dir() {
             candidates.push(r.join("tesseract").join("tesseract.exe"));
@@ -194,6 +208,9 @@ mod tesseract {
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join(sub));
+        }
+        if let Some(d) = exe_dir() {
+            candidates.push(d.join("tesseract").join(sub));
         }
         if let Some(r) = resource_dir() {
             candidates.push(r.join("tesseract").join(sub));
