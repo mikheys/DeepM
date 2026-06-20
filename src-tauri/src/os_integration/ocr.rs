@@ -245,7 +245,8 @@ mod rapidocr {
         // Prefer custom local models (e.g. a Cyrillic PP-OCR set dropped into
         // models/rapidocr/); otherwise use the default PP-OCRv6 names, which
         // oar-ocr fetches from ModelScope automatically.
-        let (det, rec, dict) = if has_local(&d) {
+        let local = has_local(&d);
+        let (det, rec, dict) = if local {
             (
                 d.join("det.onnx").to_string_lossy().into_owned(),
                 d.join("rec.onnx").to_string_lossy().into_owned(),
@@ -259,9 +260,21 @@ mod rapidocr {
             )
         };
 
-        let ocr = OAROCRBuilder::new(det, rec, dict)
-            .build()
-            .map_err(|e| anyhow!("rapidocr init: {e}"))?;
+        // eprintln! always prints to the terminal running `npm run dev:rapidocr`
+        // (unlike log::info which is hidden by default), so there's visible
+        // feedback about model loading/downloading.
+        eprintln!("[RapidOCR] models dir: {}", d.display());
+        eprintln!(
+            "[RapidOCR] using {} models: det={det}, rec={rec}, dict={dict}",
+            if local { "LOCAL" } else { "auto-download (ModelScope)" }
+        );
+        eprintln!("[RapidOCR] building pipeline (first run downloads models — can take a while)…");
+
+        let ocr = OAROCRBuilder::new(det, rec, dict).build().map_err(|e| {
+            eprintln!("[RapidOCR] init FAILED: {e}");
+            anyhow!("rapidocr init: {e}")
+        })?;
+        eprintln!("[RapidOCR] pipeline ready, recognising…");
 
         let tmp = std::env::temp_dir().join(format!("deepm_rocr_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
@@ -269,7 +282,10 @@ mod rapidocr {
         let _ = std::fs::remove_file(&tmp);
         let loaded = loaded?;
 
-        let results = ocr.predict(vec![loaded]).map_err(|e| anyhow!("rapidocr predict: {e}"))?;
+        let results = ocr.predict(vec![loaded]).map_err(|e| {
+            eprintln!("[RapidOCR] predict FAILED: {e}");
+            anyhow!("rapidocr predict: {e}")
+        })?;
         let mut lines: Vec<String> = Vec::new();
         if let Some(r) = results.get(0) {
             for region in &r.text_regions {
@@ -278,7 +294,9 @@ mod rapidocr {
                 }
             }
         }
-        Ok(lines.join("\n"))
+        let text = lines.join("\n");
+        eprintln!("[RapidOCR] done: {} region(s), {} chars", lines.len(), text.len());
+        Ok(text)
     }
 }
 
