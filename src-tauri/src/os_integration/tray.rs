@@ -12,8 +12,15 @@ const TRAY_ID: &str = "deepm-tray";
 pub fn setup_tray(app: &AppHandle, floating_enabled: bool) -> Result<()> {
     let menu = build_menu(app, floating_enabled)?;
 
+    // The tray uses a dedicated transparent mark (reads well on the dark system
+    // tray); the exe/window/installer use the solid app icon.
+    let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray.png"))
+        .ok()
+        .or_else(|| app.default_window_icon().cloned())
+        .expect("tray icon");
+
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().cloned().unwrap())
+        .icon(tray_icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("DeepM — local translation")
