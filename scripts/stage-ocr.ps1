@@ -29,18 +29,15 @@ $srcTauri = Join-Path $root "src-tauri"
 $tess     = Join-Path $srcTauri "tesseract"
 $tessStd  = Join-Path $tess "tessdata-standard"
 
-# DLLs actually needed for OCR recognition. The bulky rendering stack (pango,
-# cairo, glib, fonts), networking (curl, ssl, ssh2) and archive libs that
-# UB-Mannheim ships are for training/utilities, not recognition, so they are
-# dropped. Matched by prefix so version suffixes don't matter.
-$keep = @(
-  "libtesseract*","libleptonica*",
-  "libgcc_s_seh*","libstdc++*","libwinpthread*",
-  "libicudt*","libicuin*","libicuuc*",
-  "libintl*","libiconv*",
-  "libpng*","libjpeg*","libtiff*","libwebp*","libwebpmux*","libsharpyuv*",
-  "libgif*","libopenjp2*","zlib*","libLerc*","libdeflate*","libjbig*",
-  "liblzma*","libzstd*"
+# Drop ONLY the rendering / text-shaping stack that UB-Mannheim ships for the
+# training tools (text2image) — it is never used by `tesseract image stdout`.
+# Everything else is kept (incl. libcurl, which tesseract.exe links at load
+# time, so dropping it stops the exe from starting). Matched by prefix.
+$drop = @(
+  "libpango*","libcairo*","libpixman*",
+  "libglib*","libgobject*","libgio*","libgmodule*",
+  "libharfbuzz*","libfontconfig*","libfreetype*","libfribidi*","libgraphite2*",
+  "libdatrie*","libthai*"
 )
 
 if (-not (Test-Path (Join-Path $TesseractDir "tesseract.exe"))) {
@@ -59,13 +56,13 @@ if ($AllDlls) {
   $allDll | Copy-Item -Destination $tess -Force
   Write-Host "  copied ALL $($allDll.Count) DLLs" -ForegroundColor DarkGray
 } else {
-  $copied = 0
+  $copied = 0; $skipped = 0
   foreach ($dll in $allDll) {
-    foreach ($pat in $keep) {
-      if ($dll.Name -like "$pat.dll") { Copy-Item $dll.FullName $tess -Force; $copied++; break }
-    }
+    $isDrop = $false
+    foreach ($pat in $drop) { if ($dll.Name -like "$pat.dll") { $isDrop = $true; break } }
+    if ($isDrop) { $skipped++ } else { Copy-Item $dll.FullName $tess -Force; $copied++ }
   }
-  Write-Host "  copied $copied of $($allDll.Count) DLLs (trimmed; pass -AllDlls if OCR fails)" -ForegroundColor DarkGray
+  Write-Host "  copied $copied DLLs, dropped $skipped rendering DLLs (pass -AllDlls if OCR fails)" -ForegroundColor DarkGray
 }
 
 foreach ($lang in @("eng","rus")) {
