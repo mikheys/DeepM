@@ -44,11 +44,11 @@ export default function OcrTestPanel({ onBack }: Props) {
   const buildReport = (): string => {
     if (!results) return "";
     let s = `OCR Test - ${path ?? ""}\n${"=".repeat(64)}\n`;
-    let lastEngine = "";
+    let lastModel = "";
     for (const r of results) {
-      if (r.engine !== lastEngine) {
-        s += `\n### ${r.engine.toUpperCase()} - ${r.model}\n`;
-        lastEngine = r.engine;
+      if (r.model !== lastModel) {
+        s += `\n### ${r.model || r.engine.toUpperCase()}\n`;
+        lastModel = r.model;
       }
       s += `\n--- preprocess: ${r.preprocess} (${r.ms} ms) ---\n`;
       if (r.error) {
