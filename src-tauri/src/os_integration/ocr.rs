@@ -27,7 +27,12 @@ fn preprocess(img: image::DynamicImage) -> image::DynamicImage {
 fn run_engine(engine: &str, prepared: image::DynamicImage) -> Result<String> {
     match engine {
         "tesseract" => tesseract::recognize(prepared),
-        "rapidocr" => Err(anyhow!("rapidocr_unavailable")),
+        "rapidocr" => {
+            #[cfg(feature = "rapidocr")]
+            { rapidocr::recognize(prepared) }
+            #[cfg(not(feature = "rapidocr"))]
+            { let _ = prepared; Err(anyhow!("rapidocr_unavailable")) }
+        }
         _ => win::recognize(prepared),
     }
 }
@@ -37,7 +42,12 @@ fn run_engine(engine: &str, prepared: image::DynamicImage) -> Result<String> {
 pub fn engine_status(engine: &str) -> bool {
     match engine {
         "tesseract" => tesseract::available(),
-        "rapidocr" => false,
+        "rapidocr" => {
+            #[cfg(feature = "rapidocr")]
+            { rapidocr::available() }
+            #[cfg(not(feature = "rapidocr"))]
+            { false }
+        }
         _ => win::available(),
     }
 }
@@ -199,6 +209,62 @@ mod tesseract {
             use std::os::windows::process::CommandExt;
             self.creation_flags(CREATE_NO_WINDOW)
         }
+    }
+}
+
+// ── RapidOCR backend (PP-OCR via ONNX, feature-gated) ─────────────────────────
+#[cfg(all(target_os = "windows", feature = "rapidocr"))]
+mod rapidocr {
+    use anyhow::{anyhow, Result};
+    use std::path::PathBuf;
+
+    /// Models live next to the GGUF models: <data_local>/DeepM/models/rapidocr/
+    /// (det.onnx, rec.onnx, dict.txt — use a Cyrillic PP-OCR recognition model).
+    fn models_dir() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_default()
+            .join("DeepM")
+            .join("models")
+            .join("rapidocr")
+    }
+
+    pub fn available() -> bool {
+        let d = models_dir();
+        d.join("det.onnx").exists() && d.join("rec.onnx").exists() && d.join("dict.txt").exists()
+    }
+
+    pub fn recognize(img: image::DynamicImage) -> Result<String> {
+        use oar_ocr::prelude::*;
+
+        let d = models_dir();
+        if !available() {
+            return Err(anyhow!("rapidocr_models_missing"));
+        }
+
+        let ocr = OAROCRBuilder::new(
+            d.join("det.onnx").to_string_lossy().into_owned(),
+            d.join("rec.onnx").to_string_lossy().into_owned(),
+            d.join("dict.txt").to_string_lossy().into_owned(),
+        )
+        .build()
+        .map_err(|e| anyhow!("rapidocr init: {e}"))?;
+
+        let tmp = std::env::temp_dir().join(format!("deepm_rocr_{}.png", std::process::id()));
+        img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
+        let loaded = load_image(&tmp).map_err(|e| anyhow!("load: {e}"));
+        let _ = std::fs::remove_file(&tmp);
+        let loaded = loaded?;
+
+        let results = ocr.predict(vec![loaded]).map_err(|e| anyhow!("rapidocr predict: {e}"))?;
+        let mut lines: Vec<String> = Vec::new();
+        if let Some(r) = results.get(0) {
+            for region in &r.text_regions {
+                if let Some((text, _conf)) = region.text_with_confidence() {
+                    lines.push(text.to_string());
+                }
+            }
+        }
+        Ok(lines.join("\n"))
     }
 }
 

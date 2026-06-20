@@ -116,6 +116,7 @@ export type Strings = {
   ocr_engine_rapidocr: string;
   ocr_tesseract_missing: string;
   ocr_rapidocr_soon: string;
+  ocr_rapidocr_no_models: string;
   settings_autostart: string;
   settings_start_tray: string;
   settings_locale: string;
@@ -252,7 +253,8 @@ const en: Strings = {
   ocr_engine_tesseract: "Tesseract (install separately)",
   ocr_engine_rapidocr: "RapidOCR (coming soon)",
   ocr_tesseract_missing: "Tesseract is not installed. Get it from github.com/UB-Mannheim/tesseract and add Russian during setup.",
-  ocr_rapidocr_soon: "RapidOCR isn't available yet — pick Windows or Tesseract.",
+  ocr_rapidocr_soon: "RapidOCR isn't available in this build — pick Windows or Tesseract.",
+  ocr_rapidocr_no_models: "RapidOCR models are missing. Download the RapidOCR pack into the models/rapidocr folder.",
   settings_autostart: "Start with Windows",
   settings_start_tray: "Start in tray",
   settings_locale: "Interface language",
@@ -385,7 +387,8 @@ const ru: Strings = {
   ocr_engine_tesseract: "Tesseract (ставится отдельно)",
   ocr_engine_rapidocr: "RapidOCR (скоро)",
   ocr_tesseract_missing: "Tesseract не установлен. Скачайте с github.com/UB-Mannheim/tesseract и при установке добавьте русский язык.",
-  ocr_rapidocr_soon: "RapidOCR пока недоступен — выберите Windows или Tesseract.",
+  ocr_rapidocr_soon: "RapidOCR не включён в этой сборке — выберите Windows или Tesseract.",
+  ocr_rapidocr_no_models: "Нет моделей RapidOCR. Скачайте пак RapidOCR в папку models/rapidocr.",
   settings_autostart: "Автозапуск с Windows",
   settings_start_tray: "Запускаться в трей",
   settings_locale: "Язык интерфейса",

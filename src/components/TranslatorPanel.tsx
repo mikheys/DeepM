@@ -212,6 +212,7 @@ export default function TranslatorPanel({
     setOcrError(
       s.includes("no_ocr_language") ? t.ocr_no_lang
         : s.includes("tesseract_not_installed") ? t.ocr_tesseract_missing
+        : s.includes("rapidocr_models_missing") ? t.ocr_rapidocr_no_models
         : s.includes("rapidocr_unavailable") ? t.ocr_rapidocr_soon
         : s.includes("no_image") ? t.ocr_no_image : s
     );

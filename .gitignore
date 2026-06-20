@@ -45,3 +45,4 @@ desktop.ini
 build.log
 # CUDA slim pack staging
 src-tauri/slim-pack/
+rapidocr-check.log
