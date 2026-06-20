@@ -44,6 +44,7 @@
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": {
+        "installerIcon": "icons/icon.ico",
         "installMode": "both",
         "languages": ["English", "Russian"]
       }
