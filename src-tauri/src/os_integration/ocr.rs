@@ -14,11 +14,31 @@ pub fn ocr_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Builds an OCR engine, preferring a Cyrillic-capable recognizer (Russian)
+/// when installed — it reads both Cyrillic AND Latin, so mixed RU/EN text comes
+/// out correctly. A Latin-only (English) engine misreads Cyrillic as lookalikes.
+#[cfg(target_os = "windows")]
+fn make_engine() -> Result<windows::Media::Ocr::OcrEngine> {
+    use windows::core::HSTRING;
+    use windows::Globalization::Language;
+    use windows::Media::Ocr::OcrEngine;
+
+    for tag in ["ru", "ru-RU"] {
+        if let Ok(lang) = Language::CreateLanguage(&HSTRING::from(tag)) {
+            if OcrEngine::IsLanguageSupported(&lang).unwrap_or(false) {
+                if let Ok(eng) = OcrEngine::TryCreateFromLanguage(&lang) {
+                    return Ok(eng);
+                }
+            }
+        }
+    }
+    OcrEngine::TryCreateFromUserProfileLanguages().map_err(|_| anyhow!("no_ocr_language"))
+}
+
 /// Runs OCR on PNG-encoded image bytes.
 #[cfg(target_os = "windows")]
 pub fn recognize_png(png: &[u8]) -> Result<String> {
     use windows::Graphics::Imaging::BitmapDecoder;
-    use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
 
     let stream = InMemoryRandomAccessStream::new()?;
@@ -31,8 +51,7 @@ pub fn recognize_png(png: &[u8]) -> Result<String> {
     let decoder = BitmapDecoder::CreateAsync(&stream)?.get()?;
     let bitmap = decoder.GetSoftwareBitmapAsync()?.get()?;
 
-    let engine = OcrEngine::TryCreateFromUserProfileLanguages()
-        .map_err(|_| anyhow!("no_ocr_language"))?;
+    let engine = make_engine()?;
     let result = engine.RecognizeAsync(&bitmap)?.get()?;
     Ok(result.Text()?.to_string())
 }
