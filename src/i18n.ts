@@ -123,6 +123,7 @@ export type Strings = {
   ocr_rapidocr_no_models: string;
   settings_ocr_preprocess: string;
   settings_ocr_preprocess_hint: string;
+  ocr_prep_auto: string;
   ocr_prep_resize_grayscale: string;
   ocr_prep_resize: string;
   ocr_prep_grayscale: string;
@@ -277,7 +278,8 @@ const en: Strings = {
   ocr_tesseract_missing: "Bundled Tesseract not found.",
   ocr_rapidocr_no_models: "RapidOCR models not found. Reinstall, or drop a PP-OCR set into the models/rapidocr folder.",
   settings_ocr_preprocess: "OCR preprocessing",
-  settings_ocr_preprocess_hint: "Image prep before recognition (compare in OCR Test Mode)",
+  settings_ocr_preprocess_hint: "Image prep before recognition (Auto = per-engine optimum)",
+  ocr_prep_auto: "Auto (per engine)",
   ocr_prep_resize_grayscale: "Resize + grayscale",
   ocr_prep_resize: "Resize only",
   ocr_prep_grayscale: "Grayscale only",
@@ -428,7 +430,8 @@ const ru: Strings = {
   ocr_tesseract_missing: "Встроенный Tesseract не найден.",
   ocr_rapidocr_no_models: "Модели RapidOCR не найдены. Переустановите или положите набор PP-OCR в папку models/rapidocr.",
   settings_ocr_preprocess: "Препроцессинг OCR",
-  settings_ocr_preprocess_hint: "Обработка картинки перед распознаванием (сравните в Тесте OCR)",
+  settings_ocr_preprocess_hint: "Обработка картинки перед распознаванием (Авто = оптимум под движок)",
+  ocr_prep_auto: "Авто (под движок)",
   ocr_prep_resize_grayscale: "Увеличение + ч/б",
   ocr_prep_resize: "Только увеличение",
   ocr_prep_grayscale: "Только ч/б",

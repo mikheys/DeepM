@@ -251,6 +251,7 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange, onOpenO
               value={settings.ocr_preprocess}
               onChange={(e) => update("ocr_preprocess", e.target.value)}
             >
+              <option value="auto">{t.ocr_prep_auto}</option>
               <option value="resize_grayscale">{t.ocr_prep_resize_grayscale}</option>
               <option value="resize">{t.ocr_prep_resize}</option>
               <option value="grayscale">{t.ocr_prep_grayscale}</option>

@@ -80,7 +80,7 @@ fn default_ocr_engine() -> String {
 }
 
 fn default_ocr_preprocess() -> String {
-    "resize_grayscale".to_string()
+    "auto".to_string()
 }
 
 fn default_tesseract_data() -> String {
@@ -111,7 +111,7 @@ impl Default for AppSettings {
             triple_copy_count: 3,
             floating_exclusions: Vec::new(),
             ocr_engine: "rapidocr".to_string(),
-            ocr_preprocess: "resize_grayscale".to_string(),
+            ocr_preprocess: "auto".to_string(),
             tesseract_data: "standard".to_string(),
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,

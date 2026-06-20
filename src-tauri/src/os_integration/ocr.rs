@@ -22,6 +22,8 @@ use std::sync::OnceLock;
 /// PP-OCR models, so "resize" without grayscale is worth comparing).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreprocessMode {
+    /// Per-engine optimum: Tesseract → resize+grayscale, RapidOCR → resize.
+    Auto,
     Original,
     Resize,
     Grayscale,
@@ -34,15 +36,30 @@ impl PreprocessMode {
             "original" => PreprocessMode::Original,
             "resize" => PreprocessMode::Resize,
             "grayscale" => PreprocessMode::Grayscale,
-            _ => PreprocessMode::ResizeGrayscale,
+            "resize_grayscale" => PreprocessMode::ResizeGrayscale,
+            _ => PreprocessMode::Auto,
         }
     }
     pub fn label(self) -> &'static str {
         match self {
+            PreprocessMode::Auto => "auto",
             PreprocessMode::Original => "original",
             PreprocessMode::Resize => "resize",
             PreprocessMode::Grayscale => "grayscale",
             PreprocessMode::ResizeGrayscale => "resize+grayscale",
+        }
+    }
+    /// Resolve "Auto" to the concrete mode each engine performs best with.
+    pub fn resolve(self, engine: &str) -> PreprocessMode {
+        match self {
+            PreprocessMode::Auto => {
+                if engine == "tesseract" {
+                    PreprocessMode::ResizeGrayscale
+                } else {
+                    PreprocessMode::Resize
+                }
+            }
+            m => m,
         }
     }
 }
@@ -96,7 +113,7 @@ fn run_engine(
     prep: PreprocessMode,
     tess_variant: &str,
 ) -> Result<String> {
-    let prepared = preprocess(img, prep);
+    let prepared = preprocess(img, prep.resolve(engine));
     match engine {
         "tesseract" => tesseract::recognize(prepared, tess_variant),
         _ => {
@@ -172,7 +189,7 @@ pub fn ocr_test(path: &str, prep: PreprocessMode, tess_variant: &str) -> Vec<Ocr
                 out.push(OcrTestResult {
                     engine: engine.into(),
                     model: String::new(),
-                    preprocess: prep.label().into(),
+                    preprocess: prep.resolve(engine).label().into(),
                     ms: 0,
                     text: String::new(),
                     error: Some(format!("open image: {e}")),
@@ -199,7 +216,7 @@ pub fn ocr_test(path: &str, prep: PreprocessMode, tess_variant: &str) -> Vec<Ocr
         out.push(OcrTestResult {
             engine: engine.into(),
             model,
-            preprocess: prep.label().into(),
+            preprocess: prep.resolve(engine).label().into(),
             ms,
             text,
             error,
