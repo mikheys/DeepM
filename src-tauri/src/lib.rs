@@ -565,6 +565,25 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Replace the source app's current selection with the given text. The floating
+/// window is WS_EX_NOACTIVATE, so the source app still holds the selection —
+/// we write the text to the clipboard and paste it (Ctrl+V), then restore the
+/// original clipboard. Called by the floating "Replace" button.
+#[tauri::command]
+async fn floating_replace(text: String) -> Result<(), String> {
+    let saved = os_integration::save_clipboard();
+    os_integration::write_clipboard(&text).map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(os_integration::paste_from_clipboard)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    if let Some(orig) = saved {
+        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+        let _ = os_integration::write_clipboard(&orig);
+    }
+    Ok(())
+}
+
 /// Resize the floating window to show/hide the translation card.
 #[tauri::command]
 async fn set_floating_expanded(expanded: bool, app: AppHandle) -> Result<(), String> {
@@ -1193,6 +1212,7 @@ pub fn run() {
             set_floating_enabled,
             check_and_show_floating,
             hide_floating_button,
+            floating_replace,
             set_floating_expanded,
             list_app_processes,
             gpu_status,

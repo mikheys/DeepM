@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Copy, X, RotateCcw, Languages } from "lucide-react";
+import { Copy, X, RotateCcw, Languages, ClipboardPaste } from "lucide-react";
 import "./FloatingButton.css";
 
 type UIState = "idle" | "loading" | "result" | "error";
@@ -112,6 +112,12 @@ export default function FloatingButton() {
     doHide();
   };
 
+  // Replace the still-selected text in the source app with the translation.
+  const handleReplace = () => {
+    invoke("floating_replace", { text: translation }).catch(() => {});
+    doHide();
+  };
+
   const handleRetry = () => runTranslate();
 
   // Prevent the button/card from taking focus away from the source app.
@@ -151,6 +157,12 @@ export default function FloatingButton() {
                 {uiState === "error" && (
                   <button className="fb-icon-btn" onClick={handleRetry} title="Повторить">
                     <RotateCcw size={14} />
+                  </button>
+                )}
+                {uiState === "result" && (
+                  <button className="fb-icon-btn" onMouseDown={noFocus} onClick={handleReplace}
+                    title="Заменить выделение переводом">
+                    <ClipboardPaste size={14} />
                   </button>
                 )}
                 {uiState === "result" && (
