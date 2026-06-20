@@ -357,53 +357,59 @@ export default function TranslatorPanel({
     () => alignText(sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg),
     [sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg]
   );
-  const { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf } = alignment;
-  // Clear the active pair whenever the alignment changes (new translation).
-  useEffect(() => { setActiveBead(null); }, [translatedText, linkMode]);
+  const { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf } = alignment;
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
+  // Clear the active pair whenever the text or mode changes.
+  useEffect(() => { setActiveBead(null); }, [translatedText, sourceText, linkMode]);
 
-  // Only segment once a translation exists (so the source stays editable until
-  // there's something to align against).
-  const linkActive = linkMode !== "off" && translatedText.trim() !== "" && !error;
-  const showSrcSegs = linkActive && srcSegs.length > 0;
-  const showTgtSegs = linkActive && tgtSegs.length > 0 && !isTranslating;
+  // Link Mode is live only once there's a translation to align against. The
+  // source stays a normal editable textarea — only the target is segmented.
+  const linkActive = linkMode !== "off" && translatedText.trim() !== "" && !error && !isTranslating;
   const matchedPairs = beads.filter((b) => b.src.length && b.tgt.length).length;
 
-  const clickSrcSeg = (i: number) => setActiveBead(srcBeadOf[i] >= 0 ? srcBeadOf[i] : null);
-  const clickTgtSeg = (j: number) => setActiveBead(tgtBeadOf[j] >= 0 ? tgtBeadOf[j] : null);
+  // Caret/click inside the source textarea → highlight the matching target span.
+  const onSourceClick = () => {
+    if (!linkActive) return;
+    const ta = sourceRef.current;
+    if (!ta) return;
+    const pos = ta.selectionStart;
+    const idx = srcSegs.findIndex((s) => pos >= s.start && pos < s.end);
+    setActiveBead(idx >= 0 && srcBeadOf[idx] >= 0 ? srcBeadOf[idx] : null);
+  };
 
-  const segPane = (
-    segs: string[],
-    beadOf: number[],
-    paraOf: number[],
-    onClick: (i: number) => void,
-    extraClass: string,
-  ) => {
-    // Group consecutive segments by paragraph so blank lines / paragraph breaks
-    // are preserved (each paragraph becomes its own block).
-    const groups: number[][] = [];
-    let lastPara: number | null = null;
-    segs.forEach((_, i) => {
-      const p = paraOf[i] ?? 0;
-      if (p !== lastPara) { groups.push([i]); lastPara = p; }
-      else groups[groups.length - 1].push(i);
+  // Click a translation segment → highlight it and select its source range in
+  // the editable textarea (native selection; nothing is re-rendered).
+  const clickTgtSeg = (j: number) => {
+    const bead = tgtBeadOf[j];
+    setActiveBead(bead >= 0 ? bead : null);
+    if (bead < 0) return;
+    const segs = beads[bead].src.map((i) => srcSegs[i]).filter(Boolean);
+    if (!segs.length) return;
+    const start = Math.min(...segs.map((s) => s.start));
+    const end = Math.max(...segs.map((s) => s.end));
+    const ta = sourceRef.current;
+    if (ta) { ta.focus(); ta.setSelectionRange(start, end); }
+  };
+
+  // Render the translation verbatim with each segment wrapped in a clickable
+  // span; the gaps between segments are kept as-is so all whitespace survives.
+  const targetSpans = () => {
+    const nodes: React.ReactNode[] = [];
+    let pos = 0;
+    tgtSegs.forEach((seg, i) => {
+      if (seg.start > pos)
+        nodes.push(<React.Fragment key={`g${i}`}>{translatedText.slice(pos, seg.start)}</React.Fragment>);
+      const active = activeBead !== null && tgtBeadOf[i] === activeBead;
+      nodes.push(
+        <span key={`s${i}`} className={`seg${active ? " seg-active" : ""}`} onClick={() => clickTgtSeg(i)}>
+          {translatedText.slice(seg.start, seg.end)}
+        </span>
+      );
+      pos = seg.end;
     });
-    return (
-      <div className={`seg-pane ${extraClass}`}>
-        {groups.map((idxs, gi) => (
-          <p className="seg-para" key={gi}>
-            {idxs.map((i) => (
-              <span
-                key={i}
-                className={`seg${activeBead !== null && beadOf[i] === activeBead ? " seg-active" : ""}`}
-                onClick={() => onClick(i)}
-              >
-                {segs[i]}{" "}
-              </span>
-            ))}
-          </p>
-        ))}
-      </div>
-    );
+    if (pos < translatedText.length)
+      nodes.push(<React.Fragment key="gend">{translatedText.slice(pos)}</React.Fragment>);
+    return <div className="seg-pane seg-pane-target">{nodes}</div>;
   };
 
   const swapDisabled = sourceLang === "auto" || targetLang === "auto";
@@ -496,23 +502,23 @@ export default function TranslatorPanel({
 
   // Source / target pane bodies — segmented (clickable) in Link Mode, otherwise
   // the normal editable textarea / output.
-  const sourceBody = showSrcSegs
-    ? segPane(srcSegs, srcBeadOf, srcParaOf, clickSrcSeg, "seg-pane-source")
-    : (
-      <div className="textarea-wrap">
-        <textarea
-          className="pane-textarea"
-          placeholder={t.source_placeholder}
-          value={sourceText}
-          onChange={handleSourceChange}
-          autoFocus
-        />
-        {ocrOverlay}
-      </div>
-    );
-  const targetBody = showTgtSegs
-    ? segPane(tgtSegs, tgtBeadOf, tgtParaOf, clickTgtSeg, "seg-pane-target")
-    : outputArea;
+  // Source is ALWAYS the editable textarea (exact formatting, edit on the fly);
+  // in Link Mode a click maps the caret to a segment to highlight the target.
+  const sourceBody = (
+    <div className="textarea-wrap">
+      <textarea
+        ref={sourceRef}
+        className="pane-textarea"
+        placeholder={t.source_placeholder}
+        value={sourceText}
+        onChange={handleSourceChange}
+        onClick={onSourceClick}
+        autoFocus
+      />
+      {ocrOverlay}
+    </div>
+  );
+  const targetBody = linkActive && tgtSegs.length > 0 ? targetSpans() : outputArea;
 
   if (layout === "horizontal") {
     return (

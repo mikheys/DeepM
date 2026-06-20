@@ -1,59 +1,79 @@
 // Post-hoc alignment between source text and its translation, fully in the
 // frontend (no backend / model / pipeline changes).
 //
-// Sentences drift with plain index pairing because the model occasionally
-// merges or splits a sentence and the error accumulates over the whole text.
-// Instead we use a length-based dynamic-programming alignment (Gale–Church):
-// it allows 1:1, 1:2, 2:1 and skip beads, so merges/splits are matched rather
-// than shifting everything after them. For sentence mode we also bound the
-// drift to within a paragraph (paragraphs are stable), aligning sentences only
-// inside each paragraph pair.
+// Segments carry their character OFFSETS into the original text, so the UI can
+// render the text verbatim (every blank line / space preserved) and highlight a
+// segment by its range — the source stays a real, editable <textarea>.
+//
+// Sentences would drift with plain index pairing (one merged/split sentence
+// shifts everything after it), so we align by length with dynamic programming
+// (Gale–Church), allowing 1:1, 1:2, 2:1 and skip beads, and bound the drift to
+// within a paragraph.
 
 export type LinkMode = "off" | "sentence" | "paragraph";
 
-/** One alignment "bead": the source segments that map to the target segments. */
+/** A segment of the original text: trimmed content + its [start,end) offsets. */
+export type Seg = { text: string; start: number; end: number };
+
+/** One alignment "bead": source segment indices ↔ target segment indices. */
 export type Bead = { src: number[]; tgt: number[] };
 
 export type Alignment = {
-  srcSegs: string[];
-  tgtSegs: string[];
+  srcSegs: Seg[];
+  tgtSegs: Seg[];
   beads: Bead[];
   /** Bead index for each source / target segment (-1 if unmatched/skip). */
   srcBeadOf: number[];
   tgtBeadOf: number[];
-  /** Paragraph index each segment belongs to (for block rendering). */
-  srcParaOf: number[];
-  tgtParaOf: number[];
 };
 
-function splitParagraphs(text: string): string[] {
-  return text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+const EMPTY: Alignment = { srcSegs: [], tgtSegs: [], beads: [], srcBeadOf: [], tgtBeadOf: [] };
+
+/** Paragraph ranges (content separated by blank lines), with offsets. */
+function paragraphRanges(text: string): Seg[] {
+  const out: Seg[] = [];
+  let idx = 0;
+  for (const chunk of text.split(/(\n[ \t]*\n)/)) {
+    if (!/^\n[ \t]*\n$/.test(chunk)) {
+      const lead = chunk.length - chunk.trimStart().length;
+      const trimmed = chunk.trim();
+      if (trimmed) out.push({ text: trimmed, start: idx + lead, end: idx + lead + trimmed.length });
+    }
+    idx += chunk.length;
+  }
+  return out;
 }
 
-function splitSentences(text: string, lang: string): string[] {
-  if (!text.trim()) return [];
+/** Sentence ranges within a paragraph range, with offsets into the full text. */
+function sentenceRanges(fullText: string, lang: string, range: { start: number; end: number }): Seg[] {
+  const sub = fullText.slice(range.start, range.end);
+  const out: Seg[] = [];
   const Segmenter = (Intl as unknown as { Segmenter?: any }).Segmenter;
   if (Segmenter) {
     try {
       const seg = new Segmenter(lang || "en", { granularity: "sentence" });
-      const out: string[] = [];
-      for (const part of seg.segment(text)) {
-        const s = String(part.segment).trim();
-        if (s) out.push(s);
+      for (const part of seg.segment(sub)) {
+        const raw = String(part.segment);
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        const lead = raw.length - raw.trimStart().length;
+        const start = range.start + part.index + lead;
+        out.push({ text: trimmed, start, end: start + trimmed.length });
       }
       if (out.length) return out;
     } catch {
       /* fall through */
     }
   }
-  return text.split(/(?<=[.!?…])\s+/).map((s) => s.trim()).filter(Boolean);
+  const trimmed = sub.trim();
+  if (trimmed) {
+    const lead = sub.length - sub.trimStart().length;
+    out.push({ text: trimmed, start: range.start + lead, end: range.start + lead + trimmed.length });
+  }
+  return out;
 }
 
-/**
- * Length-based DP alignment. Returns beads with LOCAL indices into `s` / `t`.
- * Cost = normalized squared length error + a penalty for non-1:1 beads, so the
- * aligner prefers 1:1 but will merge/split or skip when the lengths demand it.
- */
+/** Length-based DP alignment (Gale–Church). Beads use LOCAL indices into s/t. */
 function galeChurch(s: number[], t: number[], ratio: number): Bead[] {
   const n = s.length;
   const m = t.length;
@@ -64,14 +84,12 @@ function galeChurch(s: number[], t: number[], ratio: number): Bead[] {
     () => new Array(m + 1).fill(null)
   );
   dp[0][0] = 0;
-
   const lenCost = (sl: number, tl: number) => {
     const exp = sl * ratio;
     return ((tl - exp) * (tl - exp)) / (exp + 1);
   };
-  const P_SKIP = 30; // strongly discourage leaving a segment unmatched
-  const P_MERGE = 6; // mild penalty for 1:2 / 2:1 / 2:2
-
+  const P_SKIP = 30;
+  const P_MERGE = 6;
   for (let i = 0; i <= n; i++) {
     for (let j = 0; j <= m; j++) {
       const cur = dp[i][j];
@@ -96,7 +114,6 @@ function galeChurch(s: number[], t: number[], ratio: number): Bead[] {
         });
     }
   }
-
   const beads: Bead[] = [];
   let i = n;
   let j = m;
@@ -111,18 +128,10 @@ function galeChurch(s: number[], t: number[], ratio: number): Bead[] {
   return beads;
 }
 
-const lensOf = (segs: string[]) => segs.map((s) => s.length);
-const ratioOf = (src: string[], tgt: string[]) => {
-  const a = src.reduce((s, x) => s + x.length, 0);
-  const b = tgt.reduce((s, x) => s + x.length, 0);
-  return a > 0 ? b / a : 1;
-};
-
 function buildBeadMaps(beads: Bead[], nSrc: number, nTgt: number) {
   const srcBeadOf = new Array(nSrc).fill(-1);
   const tgtBeadOf = new Array(nTgt).fill(-1);
   beads.forEach((b, idx) => {
-    // Only mark beads that actually link both sides (not pure skips).
     if (b.src.length && b.tgt.length) {
       b.src.forEach((i) => (srcBeadOf[i] = idx));
       b.tgt.forEach((j) => (tgtBeadOf[j] = idx));
@@ -131,6 +140,8 @@ function buildBeadMaps(beads: Bead[], nSrc: number, nTgt: number) {
   return { srcBeadOf, tgtBeadOf };
 }
 
+const lensOf = (segs: Seg[]) => segs.map((s) => s.text.length);
+
 export function alignText(
   src: string,
   tgt: string,
@@ -138,54 +149,42 @@ export function alignText(
   srcLang: string,
   tgtLang: string
 ): Alignment {
-  if (mode === "off" || !src.trim() || !tgt.trim()) {
-    return { srcSegs: [], tgtSegs: [], beads: [], srcBeadOf: [], tgtBeadOf: [], srcParaOf: [], tgtParaOf: [] };
-  }
+  if (mode === "off" || !src.trim() || !tgt.trim()) return EMPTY;
+  const ratio = tgt.length / (src.length || 1);
+
+  let srcSegs: Seg[];
+  let tgtSegs: Seg[];
+  let beads: Bead[];
 
   if (mode === "paragraph") {
-    const srcSegs = splitParagraphs(src);
-    const tgtSegs = splitParagraphs(tgt);
-    const beads = galeChurch(lensOf(srcSegs), lensOf(tgtSegs), ratioOf(srcSegs, tgtSegs));
-    const { srcBeadOf, tgtBeadOf } = buildBeadMaps(beads, srcSegs.length, tgtSegs.length);
-    // Each paragraph is its own block.
-    const srcParaOf = srcSegs.map((_, i) => i);
-    const tgtParaOf = tgtSegs.map((_, i) => i);
-    return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf };
-  }
-
-  // Sentence mode: bound drift to within a paragraph when paragraph counts
-  // match; otherwise fall back to a single whole-text sentence alignment.
-  const srcParas = splitParagraphs(src);
-  const tgtParas = splitParagraphs(tgt);
-
-  const srcSegs: string[] = [];
-  const tgtSegs: string[] = [];
-  const srcParaOf: number[] = [];
-  const tgtParaOf: number[] = [];
-  const beads: Bead[] = [];
-  const ratio = ratioOf([src], [tgt]);
-
-  const alignPair = (sText: string, tText: string, paraIdx: number) => {
-    const ss = splitSentences(sText, srcLang);
-    const ts = splitSentences(tText, tgtLang);
-    const sOff = srcSegs.length;
-    const tOff = tgtSegs.length;
-    const local = galeChurch(lensOf(ss), lensOf(ts), ratio);
-    for (const b of local) {
-      beads.push({ src: b.src.map((i) => i + sOff), tgt: b.tgt.map((j) => j + tOff) });
-    }
-    srcSegs.push(...ss);
-    tgtSegs.push(...ts);
-    ss.forEach(() => srcParaOf.push(paraIdx));
-    ts.forEach(() => tgtParaOf.push(paraIdx));
-  };
-
-  if (srcParas.length === tgtParas.length && srcParas.length > 0) {
-    for (let p = 0; p < srcParas.length; p++) alignPair(srcParas[p], tgtParas[p], p);
+    srcSegs = paragraphRanges(src);
+    tgtSegs = paragraphRanges(tgt);
+    beads = galeChurch(lensOf(srcSegs), lensOf(tgtSegs), ratio);
   } else {
-    alignPair(src, tgt, 0);
+    const sp = paragraphRanges(src);
+    const tp = paragraphRanges(tgt);
+    srcSegs = [];
+    tgtSegs = [];
+    beads = [];
+    const alignPair = (sr: { start: number; end: number }, tr: { start: number; end: number }) => {
+      const ss = sentenceRanges(src, srcLang, sr);
+      const ts = sentenceRanges(tgt, tgtLang, tr);
+      const sOff = srcSegs.length;
+      const tOff = tgtSegs.length;
+      const local = galeChurch(lensOf(ss), lensOf(ts), ratio);
+      for (const b of local) {
+        beads.push({ src: b.src.map((i) => i + sOff), tgt: b.tgt.map((j) => j + tOff) });
+      }
+      srcSegs.push(...ss);
+      tgtSegs.push(...ts);
+    };
+    if (sp.length === tp.length && sp.length > 0) {
+      for (let p = 0; p < sp.length; p++) alignPair(sp[p], tp[p]);
+    } else {
+      alignPair({ start: 0, end: src.length }, { start: 0, end: tgt.length });
+    }
   }
 
   const { srcBeadOf, tgtBeadOf } = buildBeadMaps(beads, srcSegs.length, tgtSegs.length);
-  return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf };
+  return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf };
 }
