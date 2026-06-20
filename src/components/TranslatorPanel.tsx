@@ -62,7 +62,10 @@ export default function TranslatorPanel({
   const [error, setError] = useState<string | null>(null);
   const [charCount, setCharCount] = useState(0);
   const [splitRatio, setSplitRatio] = useState(50);
-  const [layout, setLayout] = useState<"horizontal" | "vertical">("horizontal");
+  const [layout, setLayout] = useState<"horizontal" | "vertical">(
+    () => (localStorage.getItem("layout") === "vertical" ? "vertical" : "horizontal")
+  );
+  useEffect(() => { localStorage.setItem("layout", layout); }, [layout]);
   const [mode, setMode] = useState<TranslationMode>("standard");
   const [style, setStyle] = useState("");
   const [prevContext, setPrevContext] = useState<string | null>(null);

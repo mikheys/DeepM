@@ -924,6 +924,22 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        // single-instance MUST be the first plugin. A second launch just brings
+        // the existing window to the front instead of starting another copy.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
+        // Remembers the main window's size & position across restarts (the
+        // floating popup is positioned at the cursor, so it's excluded).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["floating"])
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
