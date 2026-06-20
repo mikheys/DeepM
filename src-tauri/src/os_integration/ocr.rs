@@ -222,12 +222,14 @@ mod tesseract {
     /// `tesseract/`), then a dev path, then PATH / Program Files as a fallback.
     fn exe() -> Option<PathBuf> {
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Some(r) = resource_dir() {
-            candidates.push(r.join("tesseract").join("tesseract.exe"));
-        }
+        // DEV: prefer the freshly-staged source folder over target/<profile>,
+        // which may hold stale placeholder copies of the resources.
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join("tesseract.exe"));
+        }
+        if let Some(r) = resource_dir() {
+            candidates.push(r.join("tesseract").join("tesseract.exe"));
         }
         for c in &candidates {
             if c.exists() {
@@ -254,14 +256,17 @@ mod tesseract {
     fn tessdata_dir(variant: &str) -> Option<PathBuf> {
         let sub = if variant == "fast" { "tessdata-fast" } else { "tessdata-standard" };
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Some(r) = resource_dir() {
-            candidates.push(r.join("tesseract").join(sub));
-        }
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join(sub));
         }
-        candidates.into_iter().find(|d| d.join("eng.traineddata").exists())
+        if let Some(r) = resource_dir() {
+            candidates.push(r.join("tesseract").join(sub));
+        }
+        // A non-empty traineddata file must be present (placeholder copies are 0 bytes).
+        candidates.into_iter().find(|d| {
+            d.join("eng.traineddata").metadata().map(|m| m.len() > 0).unwrap_or(false)
+        })
     }
 
     pub fn available() -> bool {
@@ -335,7 +340,8 @@ mod rapidocr {
     use std::path::{Path, PathBuf};
 
     fn has_local(d: &Path) -> bool {
-        d.join("det.onnx").exists() && d.join("rec.onnx").exists() && d.join("dict.txt").exists()
+        let nonempty = |p: std::path::PathBuf| p.metadata().map(|m| m.len() > 0).unwrap_or(false);
+        nonempty(d.join("det.onnx")) && nonempty(d.join("rec.onnx")) && nonempty(d.join("dict.txt"))
     }
 
     /// User override dir: drop a custom PP-OCR set here to replace the bundled one.
@@ -350,12 +356,13 @@ mod rapidocr {
     /// Bundled default models (PP-OCRv5 Cyrillic) shipped as a Tauri resource.
     fn bundled_dir() -> Option<PathBuf> {
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Some(r) = resource_dir() {
-            candidates.push(r.join("rapidocr"));
-        }
+        // DEV: prefer the freshly-staged source folder over target/<profile>.
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("rapidocr"));
+        }
+        if let Some(r) = resource_dir() {
+            candidates.push(r.join("rapidocr"));
         }
         candidates.into_iter().find(|d| has_local(d))
     }
