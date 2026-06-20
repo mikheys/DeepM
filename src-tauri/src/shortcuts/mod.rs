@@ -15,7 +15,7 @@ impl Default for ShortcutConfig {
     fn default() -> Self {
         Self {
             triple_copy: "Ctrl+C+C+C".to_string(),
-            translate_replace: "Ctrl+Alt+T".to_string(),
+            translate_replace: "Ctrl+Shift+Alt+T".to_string(),
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
         }

@@ -20,7 +20,7 @@ impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
             triple_copy: "Ctrl+C+C+C".to_string(),
-            translate_replace: "Ctrl+Alt+T".to_string(),
+            translate_replace: "Ctrl+Shift+Alt+T".to_string(),
         }
     }
 }
@@ -95,7 +95,7 @@ impl Default for AppSettings {
     }
 }
 
-const CURRENT_SCHEMA: u32 = 4;
+const CURRENT_SCHEMA: u32 = 5;
 
 pub fn default_model_path() -> String {
     dirs::data_local_dir()
@@ -142,6 +142,12 @@ fn migrate(settings: &mut AppSettings) {
     if settings.schema_version < 3 {
         settings.default_source_lang = "auto".to_string();
         settings.default_target_lang = "auto".to_string();
+    }
+    // v5: the translate-replace default moved to Ctrl+Shift+Alt+T (Ctrl+Alt
+    // alone acts as AltGr on many layouts and types a stray character). Adopt
+    // it for configs still on the old default.
+    if settings.schema_version < 5 && settings.hotkeys.translate_replace == "Ctrl+Alt+T" {
+        settings.hotkeys.translate_replace = "Ctrl+Shift+Alt+T".to_string();
     }
     settings.schema_version = CURRENT_SCHEMA;
 }

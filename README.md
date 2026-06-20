@@ -23,7 +23,7 @@ All translation happens on your device. The internet is only needed to download 
 
 - **Translator panel** — two‑pane UI, draggable divider (double‑click to center), language swap, automatic RU↔EN direction.
 - **Floating button** — select text in any app and a small button appears next to it; click to translate. Only shows up when text is actually selected.
-- **Translate & Replace** — a hotkey (default `Ctrl+Shift+T`) translates the selected text in place.
+- **Translate & Replace** — a hotkey (default `Ctrl+Shift+Alt+T`) translates the selected text in place.
 - **Multi‑copy to app** — press `Ctrl+C` quickly 2 or 3 times (configurable) to send text to the translator window.
 - **Translation modes** — *Standard* (direct), *Contextual* (uses previous text), *Formatted* (keeps markup tags).
 - **History & glossary** — stored locally; custom terms are passed to the model.
@@ -138,7 +138,7 @@ MIT
 
 - **Панель перевода** — две панели, перетаскиваемый разделитель (двойной клик — по центру), обмен языков, авто‑направление RU↔EN.
 - **Плавающая кнопка** — выделите текст в любом приложении, рядом появится кнопка; клик — перевод. Появляется только когда текст действительно выделен.
-- **Перевод и замена** — горячая клавиша (по умолчанию `Ctrl+Shift+T`) переводит выделенный текст прямо на месте.
+- **Перевод и замена** — горячая клавиша (по умолчанию `Ctrl+Shift+Alt+T`) переводит выделенный текст прямо на месте.
 - **Множественный Ctrl+C** — нажмите `Ctrl+C` быстро 2 или 3 раза (настраивается), чтобы отправить текст в окно переводчика.
 - **Режимы перевода** — *Стандарт* (прямой), *С контекстом* (учитывает предыдущий текст), *С разметкой* (сохраняет теги).
 - **История и глоссарий** — хранятся локально; свои термины передаются модели.
