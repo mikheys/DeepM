@@ -168,6 +168,13 @@ export type Strings = {
   divider_reset_hint: string;
   layout_to_vertical: string;
   layout_to_horizontal: string;
+
+  // Link Mode
+  link_hint: string;
+  link_debug_hint: string;
+  link_off: string;
+  link_sentence: string;
+  link_paragraph: string;
 };
 
 const en: Strings = {
@@ -325,7 +332,12 @@ const en: Strings = {
   mode_structured: "Keep code/markup",
   mode_delimiter: "Keep delimiters",
   mode_style_placeholder: "e.g. formal, casual, literary…",
-  mode_hint: "Translation mode. Hy-MT2 adds Style (enforce a tone), Keep code/markup (don't translate code, keys, variables) and Keep delimiters.",
+  link_hint: "Link Mode — click a segment to highlight its pair on the other side",
+  link_debug_hint: "source segments / target segments · matched pairs",
+  link_off: "Link: off",
+  link_sentence: "Sentences",
+  link_paragraph: "Paragraphs",
+  mode_hint:"Translation mode. Hy-MT2 adds Style (enforce a tone), Keep code/markup (don't translate code, keys, variables) and Keep delimiters.",
   divider_reset_hint: "Drag to resize · double-click to centre",
   layout_to_vertical: "Stacked layout",
   layout_to_horizontal: "Side-by-side layout",
@@ -486,7 +498,12 @@ const ru: Strings = {
   mode_structured: "Беречь код/разметку",
   mode_delimiter: "Беречь разделители",
   mode_style_placeholder: "напр. формальный, разговорный, литературный…",
-  mode_hint: "Режим перевода. Hy-MT2 добавляет Стиль (задать тон), Беречь код/разметку (не переводить код, ключи, переменные) и Беречь разделители.",
+  link_hint: "Режим связи — клик по сегменту подсветит его пару напротив",
+  link_debug_hint: "сегментов слева / справа · найдено пар",
+  link_off: "Связь: выкл",
+  link_sentence: "Предложения",
+  link_paragraph: "Абзацы",
+  mode_hint:"Режим перевода. Hy-MT2 добавляет Стиль (задать тон), Беречь код/разметку (не переводить код, ключи, переменные) и Беречь разделители.",
   divider_reset_hint: "Потяните для изменения · двойной клик — по центру",
   layout_to_vertical: "Раскладка стопкой",
   layout_to_horizontal: "Раскладка рядом",

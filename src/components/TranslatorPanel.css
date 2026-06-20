@@ -368,6 +368,36 @@
   cursor: text;
 }
 
+/* ── Link Mode: clickable segment panes ───────────────────────────── */
+.seg-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-primary);
+}
+.seg {
+  cursor: pointer;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 0.12s ease;
+}
+.seg:hover {
+  background-color: color-mix(in srgb, var(--color-accent, #6aa3ff) 16%, transparent);
+}
+.seg-active {
+  background-color: color-mix(in srgb, var(--color-accent, #6aa3ff) 34%, transparent);
+}
+.link-debug {
+  font-size: 11px;
+  color: var(--color-text-muted, #888);
+  white-space: nowrap;
+}
+
 .translating-indicator {
   color: var(--color-text-muted);
   font-style: italic;

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   ArrowLeftRight, ArrowUpDown,
   Columns2, Rows2,
@@ -6,7 +6,8 @@ import {
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ScanLine, ImagePlus, ClipboardPaste } from "lucide-react";
+import { ScanLine, ImagePlus, ClipboardPaste, Link2 } from "lucide-react";
+import { segment, type LinkMode, pairedIndex } from "../lib/align";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import {
   translate, detectLanguage, getModelStatus,
@@ -69,6 +70,18 @@ export default function TranslatorPanel({
   const [ocrAvailable, setOcrAvailable] = useState(true);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  // Experimental: link source ↔ translation segments (click to highlight pair).
+  const [linkMode, setLinkMode] = useState<LinkMode>(
+    () => (localStorage.getItem("linkMode") as LinkMode) || "off"
+  );
+  const [activeSeg, setActiveSeg] = useState<{ src: number | null; tgt: number | null }>(
+    { src: null, tgt: null }
+  );
+  const changeLinkMode = (m: LinkMode) => {
+    setLinkMode(m);
+    localStorage.setItem("linkMode", m);
+    setActiveSeg({ src: null, tgt: null });
+  };
 
   useEffect(() => {
     ocrStatus().then(setOcrAvailable).catch(() => setOcrAvailable(false));
@@ -339,6 +352,48 @@ export default function TranslatorPanel({
     if (!MODE_OPTIONS.some((m) => m.value === mode)) setMode("standard");
   }, [modelVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Link Mode: segment source & translation, pair by index ────────────
+  const srcLangForSeg = detectedLang || (sourceLang !== "auto" ? sourceLang : "ru");
+  const tgtLangForSeg = (resolvedTarget || (targetLang !== "auto" ? targetLang : "en")).toLowerCase();
+  const srcSegs = useMemo(
+    () => segment(sourceText, srcLangForSeg, linkMode),
+    [sourceText, srcLangForSeg, linkMode]
+  );
+  const tgtSegs = useMemo(
+    () => segment(translatedText, tgtLangForSeg, linkMode),
+    [translatedText, tgtLangForSeg, linkMode]
+  );
+  // Clear the active pair whenever the segmentation changes (new translation).
+  useEffect(() => { setActiveSeg({ src: null, tgt: null }); }, [translatedText, linkMode]);
+
+  // Only segment once a translation exists (so the source stays editable until
+  // there's something to align against).
+  const linkActive = linkMode !== "off" && translatedText.trim() !== "" && !error;
+  const showSrcSegs = linkActive && srcSegs.length > 0;
+  const showTgtSegs = linkActive && tgtSegs.length > 0 && !isTranslating;
+
+  const clickSrcSeg = (i: number) => setActiveSeg({ src: i, tgt: pairedIndex(i, tgtSegs.length) });
+  const clickTgtSeg = (j: number) => setActiveSeg({ src: pairedIndex(j, srcSegs.length), tgt: j });
+
+  const segPane = (
+    segs: string[],
+    active: number | null,
+    onClick: (i: number) => void,
+    extraClass: string,
+  ) => (
+    <div className={`seg-pane ${extraClass}`}>
+      {segs.map((s, i) => (
+        <span
+          key={i}
+          className={`seg${active === i ? " seg-active" : ""}`}
+          onClick={() => onClick(i)}
+        >
+          {s}{" "}
+        </span>
+      ))}
+    </div>
+  );
+
   const swapDisabled = sourceLang === "auto" || targetLang === "auto";
 
   // Copy lives in the top bar now — always present (disabled when empty) so it
@@ -377,6 +432,20 @@ export default function TranslatorPanel({
         />
       )}
       <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
+      {linkActive && (
+        <span className="link-debug" title={t.link_debug_hint}>
+          {linkMode === "sentence" ? t.link_sentence : t.link_paragraph}: {srcSegs.length}/{tgtSegs.length} · {Math.min(srcSegs.length, tgtSegs.length)}↔
+        </span>
+      )}
+      <div className="mode-control" title={t.link_hint}>
+        <Link2 size={14} />
+        <select className="mode-select" value={linkMode}
+          onChange={(e) => changeLinkMode(e.target.value as LinkMode)}>
+          <option value="off">{t.link_off}</option>
+          <option value="sentence">{t.link_sentence}</option>
+          <option value="paragraph">{t.link_paragraph}</option>
+        </select>
+      </div>
       <div className="toolbar-spacer" />
       <button
         className="icon-btn"
@@ -412,6 +481,26 @@ export default function TranslatorPanel({
       {TARGET_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
     </select>
   );
+
+  // Source / target pane bodies — segmented (clickable) in Link Mode, otherwise
+  // the normal editable textarea / output.
+  const sourceBody = showSrcSegs
+    ? segPane(srcSegs, activeSeg.src, clickSrcSeg, "seg-pane-source")
+    : (
+      <div className="textarea-wrap">
+        <textarea
+          className="pane-textarea"
+          placeholder={t.source_placeholder}
+          value={sourceText}
+          onChange={handleSourceChange}
+          autoFocus
+        />
+        {ocrOverlay}
+      </div>
+    );
+  const targetBody = showTgtSegs
+    ? segPane(tgtSegs, activeSeg.tgt, clickTgtSeg, "seg-pane-target")
+    : outputArea;
 
   if (layout === "horizontal") {
     return (
@@ -452,21 +541,10 @@ export default function TranslatorPanel({
 
         {/* ── Body with draggable divider ──────────────── */}
         <div className="panel-body">
-          <div className="pane-body pane-body-source">
-            <div className="textarea-wrap">
-              <textarea
-                className="pane-textarea"
-                placeholder={t.source_placeholder}
-                value={sourceText}
-                onChange={handleSourceChange}
-                autoFocus
-              />
-              {ocrOverlay}
-            </div>
-          </div>
+          <div className="pane-body pane-body-source">{sourceBody}</div>
           <div className="divider divider-h" onMouseDown={startDrag}
             onDoubleClick={resetSplit} title={t.divider_reset_hint} />
-          <div className="pane-body pane-body-target">{outputArea}</div>
+          <div className="pane-body pane-body-target">{targetBody}</div>
         </div>
 
         {footer}
@@ -493,16 +571,7 @@ export default function TranslatorPanel({
             <X size={14} />
           </button>
         </div>
-        <div className="textarea-wrap">
-          <textarea
-            className="pane-textarea"
-            placeholder={t.source_placeholder}
-            value={sourceText}
-            onChange={handleSourceChange}
-            autoFocus
-          />
-          {ocrOverlay}
-        </div>
+        {sourceBody}
       </div>
 
       <div className="divider divider-v" onMouseDown={startDrag}
@@ -521,7 +590,7 @@ export default function TranslatorPanel({
           <div className="toolbar-spacer" />
           {copyBtn}
         </div>
-        {outputArea}
+        {targetBody}
       </div>
 
       {footer}
