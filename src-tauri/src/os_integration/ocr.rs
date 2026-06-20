@@ -228,26 +228,40 @@ mod rapidocr {
             .join("rapidocr")
     }
 
-    pub fn available() -> bool {
-        let d = models_dir();
+    fn has_local(d: &std::path::Path) -> bool {
         d.join("det.onnx").exists() && d.join("rec.onnx").exists() && d.join("dict.txt").exists()
+    }
+
+    /// Always usable: either local custom models, or oar-ocr auto-downloads the
+    /// default PP-OCRv6 models from ModelScope on first use.
+    pub fn available() -> bool {
+        true
     }
 
     pub fn recognize(img: image::DynamicImage) -> Result<String> {
         use oar_ocr::prelude::*;
 
         let d = models_dir();
-        if !available() {
-            return Err(anyhow!("rapidocr_models_missing"));
-        }
+        // Prefer custom local models (e.g. a Cyrillic PP-OCR set dropped into
+        // models/rapidocr/); otherwise use the default PP-OCRv6 names, which
+        // oar-ocr fetches from ModelScope automatically.
+        let (det, rec, dict) = if has_local(&d) {
+            (
+                d.join("det.onnx").to_string_lossy().into_owned(),
+                d.join("rec.onnx").to_string_lossy().into_owned(),
+                d.join("dict.txt").to_string_lossy().into_owned(),
+            )
+        } else {
+            (
+                "pp-ocrv6_small_det.onnx".to_string(),
+                "pp-ocrv6_small_rec.onnx".to_string(),
+                "ppocrv6_dict.txt".to_string(),
+            )
+        };
 
-        let ocr = OAROCRBuilder::new(
-            d.join("det.onnx").to_string_lossy().into_owned(),
-            d.join("rec.onnx").to_string_lossy().into_owned(),
-            d.join("dict.txt").to_string_lossy().into_owned(),
-        )
-        .build()
-        .map_err(|e| anyhow!("rapidocr init: {e}"))?;
+        let ocr = OAROCRBuilder::new(det, rec, dict)
+            .build()
+            .map_err(|e| anyhow!("rapidocr init: {e}"))?;
 
         let tmp = std::env::temp_dir().join(format!("deepm_rocr_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
