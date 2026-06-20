@@ -249,6 +249,10 @@ mod rapidocr {
         // oar-ocr 0.6.3 expects real local file paths (no ModelScope auto-
         // download). Require det.onnx / rec.onnx / dict.txt to be present.
         eprintln!("[RapidOCR] models dir: {}", d.display());
+        for f in ["det.onnx", "rec.onnx", "dict.txt"] {
+            let p = d.join(f);
+            eprintln!("[RapidOCR]   {f}: exists={} ({})", p.exists(), p.display());
+        }
         if !has_local(&d) {
             eprintln!(
                 "[RapidOCR] models MISSING — expected det.onnx, rec.onnx, dict.txt in the dir above"
