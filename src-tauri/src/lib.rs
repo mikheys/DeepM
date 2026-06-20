@@ -584,18 +584,18 @@ async fn gpu_status() -> Result<serde_json::Value, String> {
 
 // ── OCR (screenshot translation) ─────────────────────────────────────────────
 
-/// Whether the built-in Windows OCR has at least one language installed.
+/// Whether the chosen OCR backend is usable right now.
 #[tauri::command]
-async fn ocr_status() -> Result<bool, String> {
-    tokio::task::spawn_blocking(os_integration::ocr::ocr_available)
+async fn ocr_status(engine: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || os_integration::ocr::engine_status(&engine))
         .await
         .map_err(|e| e.to_string())
 }
 
 /// OCR the image currently on the clipboard (a screenshot) → text.
 #[tauri::command]
-async fn ocr_from_clipboard() -> Result<String, String> {
-    tokio::task::spawn_blocking(os_integration::ocr::recognize_clipboard)
+async fn ocr_from_clipboard(engine: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -603,8 +603,8 @@ async fn ocr_from_clipboard() -> Result<String, String> {
 
 /// OCR an image file from disk → text.
 #[tauri::command]
-async fn ocr_from_file(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path))
+async fn ocr_from_file(engine: String, path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())

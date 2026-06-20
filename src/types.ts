@@ -110,6 +110,7 @@ export type AppSettings = {
   triple_copy_interval_ms: number;
   triple_copy_count: number;
   floating_exclusions: string[];
+  ocr_engine: string;
   locale: string;
 };
 

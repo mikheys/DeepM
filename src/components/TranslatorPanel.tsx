@@ -9,7 +9,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { ScanLine, ImagePlus, ClipboardPaste } from "lucide-react";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import {
-  translate, detectLanguage, getModelStatus,
+  translate, detectLanguage, getModelStatus, getSettings,
   ocrStatus, ocrFromClipboard, ocrFromFile, launchSnip,
 } from "../api";
 import { useI18n } from "../i18n-context";
@@ -69,8 +69,15 @@ export default function TranslatorPanel({
   const [ocrAvailable, setOcrAvailable] = useState(true);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrEngine, setOcrEngine] = useState("windows");
 
-  useEffect(() => { ocrStatus().then(setOcrAvailable).catch(() => setOcrAvailable(false)); }, []);
+  useEffect(() => {
+    getSettings().then((s) => {
+      const eng = s.ocr_engine || "windows";
+      setOcrEngine(eng);
+      return ocrStatus(eng);
+    }).then(setOcrAvailable).catch(() => setOcrAvailable(false));
+  }, []);
 
   // Detect the active model family so the mode list matches its capabilities.
   useEffect(() => {
@@ -204,12 +211,14 @@ export default function TranslatorPanel({
     const s = String(e);
     setOcrError(
       s.includes("no_ocr_language") ? t.ocr_no_lang
+        : s.includes("tesseract_not_installed") ? t.ocr_tesseract_missing
+        : s.includes("rapidocr_unavailable") ? t.ocr_rapidocr_soon
         : s.includes("no_image") ? t.ocr_no_image : s
     );
   };
   const handleClipImage = async () => {
     setOcrBusy(true); setOcrError(null);
-    try { applyOcr(await ocrFromClipboard()); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
+    try { applyOcr(await ocrFromClipboard(ocrEngine)); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
   };
   const handleFileImage = async () => {
     const file = await open({
@@ -218,7 +227,7 @@ export default function TranslatorPanel({
     }).catch(() => null);
     if (!file || typeof file !== "string") return;
     setOcrBusy(true); setOcrError(null);
-    try { applyOcr(await ocrFromFile(file)); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
+    try { applyOcr(await ocrFromFile(ocrEngine, file)); } catch (e) { ocrErr(e); } finally { setOcrBusy(false); }
   };
   const handleSnip = async () => {
     setOcrBusy(true); setOcrError(null);
@@ -227,7 +236,7 @@ export default function TranslatorPanel({
     const poll = async () => {
       if (Date.now() - start > 30000) { setOcrBusy(false); return; }
       try {
-        const text = await ocrFromClipboard();
+        const text = await ocrFromClipboard(ocrEngine);
         if (text && text.trim()) { applyOcr(text); setOcrBusy(false); return; }
       } catch { /* snip not taken yet — keep waiting */ }
       window.setTimeout(poll, 800);

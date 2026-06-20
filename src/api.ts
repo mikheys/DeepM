@@ -133,14 +133,14 @@ export async function gpuStatus(): Promise<GpuStatus> {
 }
 
 // ── OCR (screenshot translation) ──────────────────────────────────────────
-export async function ocrStatus(): Promise<boolean> {
-  return invoke("ocr_status");
+export async function ocrStatus(engine: string): Promise<boolean> {
+  return invoke("ocr_status", { engine });
 }
-export async function ocrFromClipboard(): Promise<string> {
-  return invoke("ocr_from_clipboard");
+export async function ocrFromClipboard(engine: string): Promise<string> {
+  return invoke("ocr_from_clipboard", { engine });
 }
-export async function ocrFromFile(path: string): Promise<string> {
-  return invoke("ocr_from_file", { path });
+export async function ocrFromFile(engine: string, path: string): Promise<string> {
+  return invoke("ocr_from_file", { engine, path });
 }
 export async function launchSnip(): Promise<void> {
   return invoke("launch_snip");

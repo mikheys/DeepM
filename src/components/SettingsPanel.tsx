@@ -234,6 +234,18 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             <span className="settings-hint">{t.settings_exclusions_hint}</span>
           </div>
           <div className="settings-row">
+            <label>{t.settings_ocr_engine}</label>
+            <select
+              value={settings.ocr_engine}
+              onChange={(e) => update("ocr_engine", e.target.value)}
+            >
+              <option value="windows">{t.ocr_engine_windows}</option>
+              <option value="tesseract">{t.ocr_engine_tesseract}</option>
+              <option value="rapidocr">{t.ocr_engine_rapidocr}</option>
+            </select>
+            <span className="settings-hint">{t.settings_ocr_engine_hint}</span>
+          </div>
+          <div className="settings-row">
             <label>{t.settings_autostart}</label>
             <input
               type="checkbox"

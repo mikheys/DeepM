@@ -48,6 +48,9 @@ pub struct AppSettings {
     /// global hotkeys are suppressed.
     #[serde(default)]
     pub floating_exclusions: Vec<String>,
+    /// OCR backend: "windows" | "tesseract" | "rapidocr".
+    #[serde(default = "default_ocr_engine")]
+    pub ocr_engine: String,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -64,6 +67,10 @@ fn default_triple_copy_count() -> u32 {
 
 fn default_model_version() -> String {
     "HY-MT1.5".to_string()
+}
+
+fn default_ocr_engine() -> String {
+    "windows".to_string()
 }
 
 fn default_locale() -> String {
@@ -89,6 +96,7 @@ impl Default for AppSettings {
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
             floating_exclusions: Vec::new(),
+            ocr_engine: "windows".to_string(),
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

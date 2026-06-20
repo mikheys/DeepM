@@ -109,6 +109,13 @@ export type Strings = {
   settings_interface: string;
   settings_floating: string;
   settings_floating_hint: string;
+  settings_ocr_engine: string;
+  settings_ocr_engine_hint: string;
+  ocr_engine_windows: string;
+  ocr_engine_tesseract: string;
+  ocr_engine_rapidocr: string;
+  ocr_tesseract_missing: string;
+  ocr_rapidocr_soon: string;
   settings_autostart: string;
   settings_start_tray: string;
   settings_locale: string;
@@ -239,6 +246,13 @@ const en: Strings = {
   settings_interface: "Interface",
   settings_floating: "Show floating button",
   settings_floating_hint: "Appears when text is selected",
+  settings_ocr_engine: "OCR engine",
+  settings_ocr_engine_hint: "Engine for screenshot/image text recognition",
+  ocr_engine_windows: "Windows (built-in)",
+  ocr_engine_tesseract: "Tesseract (install separately)",
+  ocr_engine_rapidocr: "RapidOCR (coming soon)",
+  ocr_tesseract_missing: "Tesseract is not installed. Get it from github.com/UB-Mannheim/tesseract and add Russian during setup.",
+  ocr_rapidocr_soon: "RapidOCR isn't available yet — pick Windows or Tesseract.",
   settings_autostart: "Start with Windows",
   settings_start_tray: "Start in tray",
   settings_locale: "Interface language",
@@ -365,6 +379,13 @@ const ru: Strings = {
   settings_interface: "Интерфейс",
   settings_floating: "Плавающая кнопка",
   settings_floating_hint: "Появляется при выделении текста",
+  settings_ocr_engine: "Движок OCR",
+  settings_ocr_engine_hint: "Чем распознавать текст со скриншотов/картинок",
+  ocr_engine_windows: "Windows (встроенный)",
+  ocr_engine_tesseract: "Tesseract (ставится отдельно)",
+  ocr_engine_rapidocr: "RapidOCR (скоро)",
+  ocr_tesseract_missing: "Tesseract не установлен. Скачайте с github.com/UB-Mannheim/tesseract и при установке добавьте русский язык.",
+  ocr_rapidocr_soon: "RapidOCR пока недоступен — выберите Windows или Tesseract.",
   settings_autostart: "Автозапуск с Windows",
   settings_start_tray: "Запускаться в трей",
   settings_locale: "Язык интерфейса",
