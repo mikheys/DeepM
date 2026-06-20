@@ -259,7 +259,13 @@ export default function TranslatorPanel({
         </button>
       </div>
       {ocrBusy && <div className="ocr-status">{t.ocr_working}</div>}
-      {!ocrAvailable && <div className="ocr-status ocr-warn">{t.ocr_no_lang}</div>}
+      {!ocrAvailable && (
+        <div className="ocr-status ocr-warn">{
+          ocrEngine === "rapidocr" ? t.ocr_rapidocr_soon
+            : ocrEngine === "tesseract" ? t.ocr_tesseract_missing
+            : t.ocr_no_lang
+        }</div>
+      )}
       {ocrError && <div className="ocr-status ocr-warn">{ocrError}</div>}
     </div>
   ) : null;
