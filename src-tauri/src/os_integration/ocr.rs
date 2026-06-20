@@ -262,29 +262,30 @@ mod tesseract {
         }
     }
 
-    pub fn recognize(img: image::DynamicImage, variant: &str, psm: u32) -> Result<String> {
-        dbg_log(&format!("--- OCR attempt (variant={variant}, psm={psm}) ---"));
-        dbg_log(&format!("exe_dir   = {:?}", exe_dir().map(|d| d.display().to_string())));
-        dbg_log(&format!("resource_dir = {:?}", resource_dir().map(|d| d.display().to_string())));
+    /// Context line written to the debug log only when recognition fails.
+    fn fail_context(variant: &str, psm: u32) -> String {
+        format!(
+            "--- OCR FAIL (variant={variant}, psm={psm}) exe_dir={:?} resource_dir={:?} ---",
+            exe_dir().map(|d| d.display().to_string()),
+            resource_dir().map(|d| d.display().to_string()),
+        )
+    }
 
+    pub fn recognize(img: image::DynamicImage, variant: &str, psm: u32) -> Result<String> {
         let exe = match exe() {
-            Some(e) => {
-                dbg_log(&format!("tesseract.exe = {} (exists={})", e.display(), e.exists()));
-                e
-            }
+            Some(e) => e,
             None => {
+                dbg_log(&fail_context(variant, psm));
                 dbg_log("tesseract.exe NOT FOUND in any candidate");
                 return Err(anyhow!("tesseract_not_installed"));
             }
         };
         let tessdata = tessdata_dir(variant);
-        dbg_log(&format!("tessdata = {:?}", tessdata.as_ref().map(|d| d.display().to_string())));
 
         let tmp = std::env::temp_dir().join(format!("deepm_ocr_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
 
         let langs = langs(&exe, tessdata.as_ref());
-        dbg_log(&format!("langs = {langs}"));
         let psm = if (3..=13).contains(&psm) { psm } else { 6 };
         let psm_s = psm.to_string();
         let mut cmd = Command::new(&exe);
@@ -301,17 +302,22 @@ mod tesseract {
         let _ = std::fs::remove_file(&tmp);
 
         let output = output.map_err(|e| {
-            dbg_log(&format!("SPAWN FAILED: {e}"));
+            dbg_log(&fail_context(variant, psm));
+            dbg_log(&format!("SPAWN FAILED (exe={}): {e}", exe.display()));
             anyhow!("tesseract run: {e}")
         })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            dbg_log(&format!("EXIT FAIL code={:?} stderr={}", output.status.code(), stderr.trim()));
+            dbg_log(&fail_context(variant, psm));
+            dbg_log(&format!(
+                "EXIT FAIL code={:?} tessdata={:?} stderr={}",
+                output.status.code(),
+                tessdata.as_ref().map(|d| d.display().to_string()),
+                stderr.trim()
+            ));
             return Err(anyhow!("tesseract error: {}", stderr.trim()));
         }
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        dbg_log(&format!("OK {} chars", text.len()));
-        Ok(text)
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     /// Small extension so the CLI calls don't flash a console window.
