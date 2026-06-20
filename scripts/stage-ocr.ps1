@@ -28,9 +28,12 @@ $tess  = Join-Path $srcTauri "tesseract"
 $tessStd  = Join-Path $tess "tessdata-standard"
 $tessFast = Join-Path $tess "tessdata-fast"
 
+# Note: do NOT redirect curl's stderr (2>$null). Under $ErrorActionPreference =
+# "Stop" that turns curl's progress output into a terminating NativeCommandError.
+# --no-progress-meter keeps the console clean while still printing real errors.
 function Dl($url, $out) {
   Write-Host "  -> $([IO.Path]::GetFileName($out))" -ForegroundColor DarkGray
-  & curl.exe -L --retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30 -o $out $url
+  & curl.exe -L --no-progress-meter --retry 10 --retry-all-errors --retry-delay 3 --connect-timeout 30 -o $out $url
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "download failed: $url" }
 }
 
@@ -39,7 +42,7 @@ function Dl($url, $out) {
 function DlMirror($urls, $out) {
   Write-Host "  -> $([IO.Path]::GetFileName($out))" -ForegroundColor DarkGray
   foreach ($u in $urls) {
-    & curl.exe -L --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 20 -o $out $u 2>$null
+    & curl.exe -L --no-progress-meter --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 20 -o $out $u
     if ($LASTEXITCODE -eq 0 -and (Test-Path $out) -and (Get-Item $out).Length -gt 0) { return $true }
     Write-Host "     mirror failed, trying next" -ForegroundColor DarkYellow
   }
