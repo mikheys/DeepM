@@ -157,6 +157,23 @@ mod tesseract {
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    /// Appends a line to %LOCALAPPDATA%/DeepM/ocr-debug.log (visible in release,
+    /// unlike eprintln). Helps diagnose path/DLL issues in installed builds.
+    fn dbg_log(msg: &str) {
+        if let Some(d) = dirs::data_local_dir() {
+            let dir = d.join("DeepM");
+            let _ = std::fs::create_dir_all(&dir);
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("ocr-debug.log"))
+            {
+                let _ = writeln!(f, "{msg}");
+            }
+        }
+    }
+
     /// Locate tesseract.exe: bundled copy first (next to the installed exe under
     /// `tesseract/`), then a dev path, then PATH / Program Files as a fallback.
     fn exe() -> Option<PathBuf> {
@@ -246,13 +263,28 @@ mod tesseract {
     }
 
     pub fn recognize(img: image::DynamicImage, variant: &str, psm: u32) -> Result<String> {
-        let exe = exe().ok_or_else(|| anyhow!("tesseract_not_installed"))?;
+        dbg_log(&format!("--- OCR attempt (variant={variant}, psm={psm}) ---"));
+        dbg_log(&format!("exe_dir   = {:?}", exe_dir().map(|d| d.display().to_string())));
+        dbg_log(&format!("resource_dir = {:?}", resource_dir().map(|d| d.display().to_string())));
+
+        let exe = match exe() {
+            Some(e) => {
+                dbg_log(&format!("tesseract.exe = {} (exists={})", e.display(), e.exists()));
+                e
+            }
+            None => {
+                dbg_log("tesseract.exe NOT FOUND in any candidate");
+                return Err(anyhow!("tesseract_not_installed"));
+            }
+        };
         let tessdata = tessdata_dir(variant);
+        dbg_log(&format!("tessdata = {:?}", tessdata.as_ref().map(|d| d.display().to_string())));
 
         let tmp = std::env::temp_dir().join(format!("deepm_ocr_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
 
         let langs = langs(&exe, tessdata.as_ref());
+        dbg_log(&format!("langs = {langs}"));
         let psm = if (3..=13).contains(&psm) { psm } else { 6 };
         let psm_s = psm.to_string();
         let mut cmd = Command::new(&exe);
@@ -268,14 +300,18 @@ mod tesseract {
         let output = cmd.no_window().output();
         let _ = std::fs::remove_file(&tmp);
 
-        let output = output.map_err(|e| anyhow!("tesseract run: {e}"))?;
+        let output = output.map_err(|e| {
+            dbg_log(&format!("SPAWN FAILED: {e}"));
+            anyhow!("tesseract run: {e}")
+        })?;
         if !output.status.success() {
-            return Err(anyhow!(
-                "tesseract error: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            dbg_log(&format!("EXIT FAIL code={:?} stderr={}", output.status.code(), stderr.trim()));
+            return Err(anyhow!("tesseract error: {}", stderr.trim()));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        dbg_log(&format!("OK {} chars", text.len()));
+        Ok(text)
     }
 
     /// Small extension so the CLI calls don't flash a console window.
