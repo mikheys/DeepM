@@ -21,6 +21,9 @@ export type Alignment = {
   /** Bead index for each source / target segment (-1 if unmatched/skip). */
   srcBeadOf: number[];
   tgtBeadOf: number[];
+  /** Paragraph index each segment belongs to (for block rendering). */
+  srcParaOf: number[];
+  tgtParaOf: number[];
 };
 
 function splitParagraphs(text: string): string[] {
@@ -136,7 +139,7 @@ export function alignText(
   tgtLang: string
 ): Alignment {
   if (mode === "off" || !src.trim() || !tgt.trim()) {
-    return { srcSegs: [], tgtSegs: [], beads: [], srcBeadOf: [], tgtBeadOf: [] };
+    return { srcSegs: [], tgtSegs: [], beads: [], srcBeadOf: [], tgtBeadOf: [], srcParaOf: [], tgtParaOf: [] };
   }
 
   if (mode === "paragraph") {
@@ -144,7 +147,10 @@ export function alignText(
     const tgtSegs = splitParagraphs(tgt);
     const beads = galeChurch(lensOf(srcSegs), lensOf(tgtSegs), ratioOf(srcSegs, tgtSegs));
     const { srcBeadOf, tgtBeadOf } = buildBeadMaps(beads, srcSegs.length, tgtSegs.length);
-    return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf };
+    // Each paragraph is its own block.
+    const srcParaOf = srcSegs.map((_, i) => i);
+    const tgtParaOf = tgtSegs.map((_, i) => i);
+    return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf };
   }
 
   // Sentence mode: bound drift to within a paragraph when paragraph counts
@@ -154,10 +160,12 @@ export function alignText(
 
   const srcSegs: string[] = [];
   const tgtSegs: string[] = [];
+  const srcParaOf: number[] = [];
+  const tgtParaOf: number[] = [];
   const beads: Bead[] = [];
   const ratio = ratioOf([src], [tgt]);
 
-  const alignPair = (sText: string, tText: string) => {
+  const alignPair = (sText: string, tText: string, paraIdx: number) => {
     const ss = splitSentences(sText, srcLang);
     const ts = splitSentences(tText, tgtLang);
     const sOff = srcSegs.length;
@@ -168,14 +176,16 @@ export function alignText(
     }
     srcSegs.push(...ss);
     tgtSegs.push(...ts);
+    ss.forEach(() => srcParaOf.push(paraIdx));
+    ts.forEach(() => tgtParaOf.push(paraIdx));
   };
 
   if (srcParas.length === tgtParas.length && srcParas.length > 0) {
-    for (let p = 0; p < srcParas.length; p++) alignPair(srcParas[p], tgtParas[p]);
+    for (let p = 0; p < srcParas.length; p++) alignPair(srcParas[p], tgtParas[p], p);
   } else {
-    alignPair(src, tgt);
+    alignPair(src, tgt, 0);
   }
 
   const { srcBeadOf, tgtBeadOf } = buildBeadMaps(beads, srcSegs.length, tgtSegs.length);
-  return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf };
+  return { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf };
 }

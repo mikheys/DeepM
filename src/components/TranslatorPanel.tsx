@@ -357,7 +357,7 @@ export default function TranslatorPanel({
     () => alignText(sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg),
     [sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg]
   );
-  const { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf } = alignment;
+  const { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf, srcParaOf, tgtParaOf } = alignment;
   // Clear the active pair whenever the alignment changes (new translation).
   useEffect(() => { setActiveBead(null); }, [translatedText, linkMode]);
 
@@ -374,21 +374,37 @@ export default function TranslatorPanel({
   const segPane = (
     segs: string[],
     beadOf: number[],
+    paraOf: number[],
     onClick: (i: number) => void,
     extraClass: string,
-  ) => (
-    <div className={`seg-pane ${extraClass}`}>
-      {segs.map((s, i) => (
-        <span
-          key={i}
-          className={`seg${activeBead !== null && beadOf[i] === activeBead ? " seg-active" : ""}`}
-          onClick={() => onClick(i)}
-        >
-          {s}{" "}
-        </span>
-      ))}
-    </div>
-  );
+  ) => {
+    // Group consecutive segments by paragraph so blank lines / paragraph breaks
+    // are preserved (each paragraph becomes its own block).
+    const groups: number[][] = [];
+    let lastPara: number | null = null;
+    segs.forEach((_, i) => {
+      const p = paraOf[i] ?? 0;
+      if (p !== lastPara) { groups.push([i]); lastPara = p; }
+      else groups[groups.length - 1].push(i);
+    });
+    return (
+      <div className={`seg-pane ${extraClass}`}>
+        {groups.map((idxs, gi) => (
+          <p className="seg-para" key={gi}>
+            {idxs.map((i) => (
+              <span
+                key={i}
+                className={`seg${activeBead !== null && beadOf[i] === activeBead ? " seg-active" : ""}`}
+                onClick={() => onClick(i)}
+              >
+                {segs[i]}{" "}
+              </span>
+            ))}
+          </p>
+        ))}
+      </div>
+    );
+  };
 
   const swapDisabled = sourceLang === "auto" || targetLang === "auto";
 
@@ -481,7 +497,7 @@ export default function TranslatorPanel({
   // Source / target pane bodies — segmented (clickable) in Link Mode, otherwise
   // the normal editable textarea / output.
   const sourceBody = showSrcSegs
-    ? segPane(srcSegs, srcBeadOf, clickSrcSeg, "seg-pane-source")
+    ? segPane(srcSegs, srcBeadOf, srcParaOf, clickSrcSeg, "seg-pane-source")
     : (
       <div className="textarea-wrap">
         <textarea
@@ -495,7 +511,7 @@ export default function TranslatorPanel({
       </div>
     );
   const targetBody = showTgtSegs
-    ? segPane(tgtSegs, tgtBeadOf, clickTgtSeg, "seg-pane-target")
+    ? segPane(tgtSegs, tgtBeadOf, tgtParaOf, clickTgtSeg, "seg-pane-target")
     : outputArea;
 
   if (layout === "horizontal") {
