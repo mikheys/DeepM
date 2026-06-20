@@ -56,6 +56,30 @@ pub fn recognize_png(png: &[u8]) -> Result<String> {
     Ok(result.Text()?.to_string())
 }
 
+/// Upscales (Windows OCR is tuned for ~300dpi scans, screenshots are low-res),
+/// grayscales, then OCRs. Upscaling is the single biggest accuracy win on
+/// screenshots and small UI text.
+#[cfg(target_os = "windows")]
+fn ocr_dynimage(img: image::DynamicImage) -> Result<String> {
+    use image::GenericImageView;
+    let (w, h) = img.dimensions();
+    let longest = w.max(h);
+    let scale = if longest < 1000 { 3 } else if longest < 2200 { 2 } else { 1 };
+
+    let prepared = if scale > 1 {
+        img.resize(w * scale, h * scale, image::imageops::FilterType::Lanczos3)
+            .grayscale()
+    } else {
+        img.grayscale()
+    };
+
+    let mut png: Vec<u8> = Vec::new();
+    prepared
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| anyhow!("encode: {e}"))?;
+    recognize_png(&png)
+}
+
 /// Reads an image from the clipboard (a screenshot), runs OCR, returns text.
 #[cfg(target_os = "windows")]
 pub fn recognize_clipboard() -> Result<String> {
@@ -70,24 +94,14 @@ pub fn recognize_clipboard() -> Result<String> {
     let buf = image::RgbaImage::from_raw(w, h, rgba)
         .ok_or_else(|| anyhow!("bad clipboard image"))?;
 
-    let mut png: Vec<u8> = Vec::new();
-    image::DynamicImage::ImageRgba8(buf)
-        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-        .map_err(|e| anyhow!("encode: {e}"))?;
-
-    recognize_png(&png)
+    ocr_dynimage(image::DynamicImage::ImageRgba8(buf))
 }
 
 /// Reads an image file from disk, runs OCR, returns text.
 #[cfg(target_os = "windows")]
 pub fn recognize_file(path: &str) -> Result<String> {
-    // Re-encode to PNG via the `image` crate so any input format works.
     let dynimg = image::open(path).map_err(|e| anyhow!("open image: {e}"))?;
-    let mut png: Vec<u8> = Vec::new();
-    dynimg
-        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-        .map_err(|e| anyhow!("encode: {e}"))?;
-    recognize_png(&png)
+    ocr_dynimage(dynimg)
 }
 
 // ── Non-Windows stubs ─────────────────────────────────────────────────────────
