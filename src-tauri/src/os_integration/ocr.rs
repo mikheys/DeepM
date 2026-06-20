@@ -304,6 +304,14 @@ mod tesseract {
         let langs = langs(&exe, tessdata.as_ref());
         let mut cmd = Command::new(&exe);
         cmd.arg(&tmp).arg("stdout").args(["-l", &langs, "--psm", "6"]);
+        // Mixed RU/EN text (esp. Latin-Cyrillic hyphenated tokens like
+        // "rec-модели") is mangled when Tesseract coerces a word toward one
+        // language's dictionary. Turning the dictionaries off makes it read
+        // character-by-character, which is what we want for technical text;
+        // also keep inter-word spaces.
+        cmd.args(["-c", "preserve_interword_spaces=1"]);
+        cmd.args(["-c", "load_system_dawg=0"]);
+        cmd.args(["-c", "load_freq_dawg=0"]);
         if let Some(d) = &tessdata {
             cmd.args(["--tessdata-dir", &d.to_string_lossy()]);
         }
