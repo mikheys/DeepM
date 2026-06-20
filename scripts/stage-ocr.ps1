@@ -33,6 +33,18 @@ function Dl($url, $out) {
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "download failed: $url" }
 }
 
+# Try several mirrors in order (github raw is often TLS-blocked in some regions;
+# the jsdelivr CDN usually works). Succeeds on the first non-empty download.
+function DlMirror($urls, $out) {
+  Write-Host "  -> $([IO.Path]::GetFileName($out))" -ForegroundColor DarkGray
+  foreach ($u in $urls) {
+    & curl.exe -L --retry 4 --retry-all-errors --retry-delay 2 --connect-timeout 20 -o $out $u 2>$null
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $out) -and (Get-Item $out).Length -gt 0) { return $true }
+    Write-Host "     mirror failed, trying next…" -ForegroundColor DarkYellow
+  }
+  return $false
+}
+
 # ── RapidOCR (PP-OCRv5 cyrillic) ───────────────────────────────────────────────
 Write-Host "RapidOCR models (PP-OCRv5 cyrillic)…" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force $rapid | Out-Null
@@ -55,11 +67,23 @@ foreach ($lang in @("eng","rus")) {
   Copy-Item $src $tessStd -Force
 }
 
-# ── Tesseract fast data ────────────────────────────────────────────────────────
+# ── Tesseract fast data (CDN mirrors; falls back to copying standard) ──────────
 Write-Host "Tesseract fast data (tessdata_fast)…" -ForegroundColor Cyan
-$tf = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
-Dl "$tf/eng.traineddata" (Join-Path $tessFast "eng.traineddata")
-Dl "$tf/rus.traineddata" (Join-Path $tessFast "rus.traineddata")
+function FastMirrors($lang) {
+  @(
+    "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main/$lang.traineddata",
+    "https://fastly.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main/$lang.traineddata",
+    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/$lang.traineddata",
+    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
+  )
+}
+foreach ($lang in @("eng","rus")) {
+  $ok = DlMirror (FastMirrors $lang) (Join-Path $tessFast "$lang.traineddata")
+  if (-not $ok) {
+    Write-Host "  ! fast '$lang' unreachable — copying standard data as fallback" -ForegroundColor Yellow
+    Copy-Item (Join-Path $tessStd "$lang.traineddata") (Join-Path $tessFast "$lang.traineddata") -Force
+  }
+}
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 Write-Host "`nStaged:" -ForegroundColor Green
