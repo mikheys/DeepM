@@ -1,6 +1,21 @@
 use anyhow::{anyhow, Result};
 use std::time::Duration;
 
+/// Force-releases every modifier key. The translate-replace hotkey
+/// (Ctrl+Alt+T) may still be physically held when we start sending synthetic
+/// Ctrl+C / Ctrl+V; a stuck Alt/Ctrl turns those into garbage (e.g. Alt+c → ¢)
+/// that gets typed over the selection. Releasing first clears that state.
+#[cfg(target_os = "windows")]
+fn release_modifiers(enigo: &mut enigo::Enigo) {
+    use enigo::{Direction, Key, Keyboard};
+    for k in [Key::Control, Key::Alt, Key::Shift, Key::Meta] {
+        let _ = enigo.key(k, Direction::Release);
+    }
+    std::thread::sleep(Duration::from_millis(40));
+}
+#[cfg(not(target_os = "windows"))]
+fn release_modifiers(_enigo: &mut enigo::Enigo) {}
+
 /// Saves current clipboard text, returns it (or None if clipboard was not text).
 pub fn save_clipboard() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
@@ -32,6 +47,7 @@ pub fn copy_selection_to_clipboard() -> Result<String> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|e| anyhow!("enigo init error: {e}"))?;
 
+    release_modifiers(&mut enigo);
     std::thread::sleep(Duration::from_millis(50));
 
     enigo.key(Key::Control, Direction::Press)
@@ -64,6 +80,7 @@ pub fn get_selected_text() -> Option<String> {
 
     let mut enigo = Enigo::new(&Settings::default()).ok()?;
 
+    release_modifiers(&mut enigo);
     std::thread::sleep(Duration::from_millis(50));
     enigo.key(Key::Control, Direction::Press).ok()?;
     enigo.key(Key::Unicode('c'), Direction::Click).ok()?;
@@ -93,6 +110,7 @@ pub fn paste_from_clipboard() -> Result<()> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|e| anyhow!("enigo init error: {e}"))?;
 
+    release_modifiers(&mut enigo);
     std::thread::sleep(Duration::from_millis(30));
     enigo.key(Key::Control, Direction::Press)
         .map_err(|e| anyhow!("enigo key error: {e}"))?;
