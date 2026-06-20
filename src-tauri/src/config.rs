@@ -76,7 +76,7 @@ fn default_model_version() -> String {
 }
 
 fn default_ocr_engine() -> String {
-    "rapidocr".to_string()
+    "tesseract".to_string()
 }
 
 fn default_ocr_preprocess() -> String {
@@ -110,7 +110,7 @@ impl Default for AppSettings {
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
             floating_exclusions: Vec::new(),
-            ocr_engine: "rapidocr".to_string(),
+            ocr_engine: "tesseract".to_string(),
             ocr_preprocess: "auto".to_string(),
             tesseract_data: "standard".to_string(),
             locale: "en".to_string(),
@@ -167,9 +167,10 @@ fn migrate(settings: &mut AppSettings) {
         settings.default_source_lang = "auto".to_string();
         settings.default_target_lang = "auto".to_string();
     }
-    // v4: Windows OCR was removed; RapidOCR is the default engine now.
+    // v4: Windows OCR was removed; Tesseract is the default engine now (best
+    // for mixed RU/EN and far faster than CPU-only RapidOCR).
     if settings.schema_version < 4 && settings.ocr_engine == "windows" {
-        settings.ocr_engine = "rapidocr".to_string();
+        settings.ocr_engine = "tesseract".to_string();
     }
     settings.schema_version = CURRENT_SCHEMA;
 }

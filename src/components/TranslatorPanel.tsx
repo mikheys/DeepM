@@ -69,11 +69,11 @@ export default function TranslatorPanel({
   const [ocrAvailable, setOcrAvailable] = useState(true);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
-  const [ocrEngine, setOcrEngine] = useState("rapidocr");
+  const [ocrEngine, setOcrEngine] = useState("tesseract");
 
   useEffect(() => {
     getSettings().then((s) => {
-      const eng = s.ocr_engine || "rapidocr";
+      const eng = s.ocr_engine || "tesseract";
       setOcrEngine(eng);
       return ocrStatus(eng);
     }).then(setOcrAvailable).catch(() => setOcrAvailable(false));
