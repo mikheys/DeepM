@@ -114,8 +114,10 @@ export type AppSettings = {
   ocr_engine: string;
   /** OCR image preprocessing: "original" | "resize" | "grayscale" | "resize_grayscale". */
   ocr_preprocess: string;
-  /** Tesseract language data set: "standard" | "fast". */
+  /** Tesseract language data set: "standard" | "fast" | "best". */
   tesseract_data: string;
+  /** Tesseract page segmentation mode: "3" | "6" | "11". */
+  tesseract_psm: string;
   locale: string;
 };
 

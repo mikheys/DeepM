@@ -27,6 +27,7 @@ $rapid = Join-Path $srcTauri "rapidocr"
 $tess  = Join-Path $srcTauri "tesseract"
 $tessStd  = Join-Path $tess "tessdata-standard"
 $tessFast = Join-Path $tess "tessdata-fast"
+$tessBest = Join-Path $tess "tessdata-best"
 
 # Note: do NOT redirect curl's stderr (2>$null). Under $ErrorActionPreference =
 # "Stop" that turns curl's progress output into a terminating NativeCommandError.
@@ -62,7 +63,7 @@ Write-Host "Tesseract (from $TesseractDir)" -ForegroundColor Cyan
 if (-not (Test-Path (Join-Path $TesseractDir "tesseract.exe"))) {
   throw "tesseract.exe not found in '$TesseractDir'. Install UB-Mannheim Tesseract (with Russian) or pass -TesseractDir."
 }
-New-Item -ItemType Directory -Force $tess, $tessStd, $tessFast | Out-Null
+New-Item -ItemType Directory -Force $tess, $tessStd, $tessFast, $tessBest | Out-Null
 Copy-Item (Join-Path $TesseractDir "tesseract.exe") $tess -Force
 Get-ChildItem (Join-Path $TesseractDir "*.dll") | Copy-Item -Destination $tess -Force
 foreach ($lang in @("eng","rus")) {
@@ -86,6 +87,24 @@ foreach ($lang in @("eng","rus")) {
   if (-not $ok) {
     Write-Host "  ! fast '$lang' unreachable - copying standard data as fallback" -ForegroundColor Yellow
     Copy-Item (Join-Path $tessStd "$lang.traineddata") (Join-Path $tessFast "$lang.traineddata") -Force
+  }
+}
+
+# -- Tesseract best data (most accurate; CDN mirrors) ---------------------------
+Write-Host "Tesseract best data (tessdata_best)" -ForegroundColor Cyan
+function BestMirrors($lang) {
+  @(
+    "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/$lang.traineddata",
+    "https://fastly.jsdelivr.net/gh/tesseract-ocr/tessdata_best@main/$lang.traineddata",
+    "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/$lang.traineddata",
+    "https://github.com/tesseract-ocr/tessdata_best/raw/main/$lang.traineddata"
+  )
+}
+foreach ($lang in @("eng","rus")) {
+  $ok = DlMirror (BestMirrors $lang) (Join-Path $tessBest "$lang.traineddata")
+  if (-not $ok) {
+    Write-Host "  ! best '$lang' unreachable - copying standard data as fallback" -ForegroundColor Yellow
+    Copy-Item (Join-Path $tessStd "$lang.traineddata") (Join-Path $tessBest "$lang.traineddata") -Force
   }
 }
 

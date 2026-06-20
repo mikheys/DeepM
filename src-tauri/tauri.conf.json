@@ -41,6 +41,7 @@
       "tesseract/*",
       "tesseract/tessdata-standard/*",
       "tesseract/tessdata-fast/*",
+      "tesseract/tessdata-best/*",
       "rapidocr/*"
     ],
     "windows": {

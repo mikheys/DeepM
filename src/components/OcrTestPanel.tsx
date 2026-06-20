@@ -101,11 +101,11 @@ export default function OcrTestPanel({ onBack }: Props) {
           {results.map((r, i) => (
             <div className="ocr-test-card" key={`${r.engine}-${r.preprocess}-${i}`}>
               <div className="ocr-test-card-head">
-                <span className="ocr-test-engine">{r.engine} · {r.preprocess}</span>
+                <span className="ocr-test-engine">{r.model || r.engine}</span>
                 <span className="ocr-test-ms">{r.ms} ms</span>
               </div>
               <div className="ocr-test-meta">
-                <span>{r.model}</span>
+                <span>{t.ocr_test_prep}: {r.preprocess}</span>
               </div>
               {r.error ? (
                 <div className="ocr-test-status ocr-test-error">{r.error}</div>

@@ -584,12 +584,13 @@ async fn gpu_status() -> Result<serde_json::Value, String> {
 
 // ── OCR (screenshot translation) ─────────────────────────────────────────────
 
-/// Reads OCR options (preprocess mode + Tesseract data variant) from settings.
-async fn ocr_opts(state: &AppState) -> (os_integration::ocr::PreprocessMode, String) {
+/// Reads OCR options (preprocess mode, Tesseract data variant, PSM) from settings.
+async fn ocr_opts(state: &AppState) -> (os_integration::ocr::PreprocessMode, String, u32) {
     let s = state.settings.lock().await;
     (
         os_integration::ocr::PreprocessMode::parse(&s.ocr_preprocess),
         s.tesseract_data.clone(),
+        s.tesseract_psm.parse().unwrap_or(6),
     )
 }
 
@@ -604,8 +605,8 @@ async fn ocr_status(engine: String) -> Result<bool, String> {
 /// OCR the image currently on the clipboard (a screenshot) → normalized text.
 #[tauri::command]
 async fn ocr_from_clipboard(engine: String, state: State<'_, AppState>) -> Result<String, String> {
-    let (prep, tess) = ocr_opts(&state).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine, prep, &tess))
+    let (prep, tess, psm) = ocr_opts(&state).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine, prep, &tess, psm))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -615,8 +616,8 @@ async fn ocr_from_clipboard(engine: String, state: State<'_, AppState>) -> Resul
 /// OCR an image file from disk → normalized text.
 #[tauri::command]
 async fn ocr_from_file(engine: String, path: String, state: State<'_, AppState>) -> Result<String, String> {
-    let (prep, tess) = ocr_opts(&state).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path, prep, &tess))
+    let (prep, tess, psm) = ocr_opts(&state).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path, prep, &tess, psm))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -647,19 +648,18 @@ fn enrich_ocr_results(results: Vec<os_integration::ocr::OcrTestResult>) -> serde
 /// returning raw + normalized text, timing, model and preprocessing for each.
 #[tauri::command]
 async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (prep, tess) = ocr_opts(&state).await;
-    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess))
+    let (prep, tess, psm) = ocr_opts(&state).await;
+    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess, psm))
         .await
         .map_err(|e| e.to_string())?;
     Ok(enrich_ocr_results(results))
 }
 
-/// OCR Test Mode "run all": both engines x every preprocessing variant, so the
-/// full matrix can be compared / copied as text.
+/// OCR Test Mode "run all": RapidOCR once + Tesseract swept over every installed
+/// data set x PSM, so the best config can be compared / copied as text.
 #[tauri::command]
-async fn ocr_test_all(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (_prep, tess) = ocr_opts(&state).await;
-    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test_all(&path, &tess))
+async fn ocr_test_all(path: String) -> Result<serde_json::Value, String> {
+    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test_all(&path))
         .await
         .map_err(|e| e.to_string())?;
     Ok(enrich_ocr_results(results))

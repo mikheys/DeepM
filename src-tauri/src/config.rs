@@ -54,9 +54,12 @@ pub struct AppSettings {
     /// Image preprocessing for OCR: "original" | "resize" | "grayscale" | "resize_grayscale".
     #[serde(default = "default_ocr_preprocess")]
     pub ocr_preprocess: String,
-    /// Tesseract language data set: "standard" | "fast".
+    /// Tesseract language data set: "standard" | "fast" | "best".
     #[serde(default = "default_tesseract_data")]
     pub tesseract_data: String,
+    /// Tesseract page segmentation mode (PSM): "3" | "6" | "11".
+    #[serde(default = "default_tesseract_psm")]
+    pub tesseract_psm: String,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -87,6 +90,10 @@ fn default_tesseract_data() -> String {
     "standard".to_string()
 }
 
+fn default_tesseract_psm() -> String {
+    "6".to_string()
+}
+
 fn default_locale() -> String {
     "en".to_string()
 }
@@ -113,6 +120,7 @@ impl Default for AppSettings {
             ocr_engine: "tesseract".to_string(),
             ocr_preprocess: "auto".to_string(),
             tesseract_data: "standard".to_string(),
+            tesseract_psm: "6".to_string(),
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

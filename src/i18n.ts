@@ -133,8 +133,14 @@ export type Strings = {
   ocr_prep_original: string;
   settings_tesseract_data: string;
   settings_tesseract_data_hint: string;
+  tesseract_data_best: string;
   tesseract_data_standard: string;
   tesseract_data_fast: string;
+  settings_tesseract_psm: string;
+  settings_tesseract_psm_hint: string;
+  tesseract_psm_6: string;
+  tesseract_psm_3: string;
+  tesseract_psm_11: string;
   settings_ocr_test: string;
   settings_ocr_test_btn: string;
   settings_ocr_test_hint: string;
@@ -291,9 +297,15 @@ const en: Strings = {
   ocr_prep_grayscale: "Grayscale only",
   ocr_prep_original: "Original",
   settings_tesseract_data: "Tesseract data",
-  settings_tesseract_data_hint: "Language data set: standard (more accurate) or fast (smaller)",
+  settings_tesseract_data_hint: "Language data set: best (most accurate, slower) / standard / fast (smaller)",
+  tesseract_data_best: "Best (most accurate)",
   tesseract_data_standard: "Standard",
-  tesseract_data_fast: "Fast",
+  tesseract_data_fast: "Fast (smaller)",
+  settings_tesseract_psm: "Tesseract PSM",
+  settings_tesseract_psm_hint: "Page segmentation: 6 = block, 3 = auto, 11 = sparse (UI text)",
+  tesseract_psm_6: "6 — uniform block",
+  tesseract_psm_3: "3 — auto",
+  tesseract_psm_11: "11 — sparse text",
   settings_ocr_test: "OCR Test Mode",
   settings_ocr_test_btn: "Open OCR Test…",
   settings_ocr_test_hint: "Compare RapidOCR vs Tesseract on one image",
@@ -446,9 +458,15 @@ const ru: Strings = {
   ocr_prep_grayscale: "Только ч/б",
   ocr_prep_original: "Без обработки",
   settings_tesseract_data: "Данные Tesseract",
-  settings_tesseract_data_hint: "Набор языковых данных: standard (точнее) или fast (меньше)",
+  settings_tesseract_data_hint: "Набор данных: best (точнее, медленнее) / standard / fast (меньше)",
+  tesseract_data_best: "Best (точнее всего)",
   tesseract_data_standard: "Стандартный",
-  tesseract_data_fast: "Быстрый",
+  tesseract_data_fast: "Быстрый (меньше)",
+  settings_tesseract_psm: "PSM Tesseract",
+  settings_tesseract_psm_hint: "Сегментация: 6 = блок, 3 = авто, 11 = разрежённый (текст UI)",
+  tesseract_psm_6: "6 — единый блок",
+  tesseract_psm_3: "3 — авто",
+  tesseract_psm_11: "11 — разрежённый текст",
   settings_ocr_test: "Тест OCR",
   settings_ocr_test_btn: "Открыть тест OCR…",
   settings_ocr_test_hint: "Сравнить RapidOCR и Tesseract на одной картинке",

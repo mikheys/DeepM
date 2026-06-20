@@ -265,10 +265,23 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange, onOpenO
               value={settings.tesseract_data}
               onChange={(e) => update("tesseract_data", e.target.value)}
             >
+              <option value="best">{t.tesseract_data_best}</option>
               <option value="standard">{t.tesseract_data_standard}</option>
               <option value="fast">{t.tesseract_data_fast}</option>
             </select>
             <span className="settings-hint">{t.settings_tesseract_data_hint}</span>
+          </div>
+          <div className="settings-row">
+            <label>{t.settings_tesseract_psm}</label>
+            <select
+              value={settings.tesseract_psm}
+              onChange={(e) => update("tesseract_psm", e.target.value)}
+            >
+              <option value="6">{t.tesseract_psm_6}</option>
+              <option value="3">{t.tesseract_psm_3}</option>
+              <option value="11">{t.tesseract_psm_11}</option>
+            </select>
+            <span className="settings-hint">{t.settings_tesseract_psm_hint}</span>
           </div>
           <div className="settings-row">
             <label>{t.settings_ocr_test}</label>

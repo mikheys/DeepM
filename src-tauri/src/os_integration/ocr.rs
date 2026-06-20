@@ -112,10 +112,11 @@ fn run_engine(
     img: image::DynamicImage,
     prep: PreprocessMode,
     tess_variant: &str,
+    tess_psm: u32,
 ) -> Result<String> {
     let prepared = preprocess(img, prep.resolve(engine));
     match engine {
-        "tesseract" => tesseract::recognize(prepared, tess_variant),
+        "tesseract" => tesseract::recognize(prepared, tess_variant, tess_psm),
         _ => {
             // "rapidocr" (default)
             #[cfg(feature = "rapidocr")]
@@ -142,15 +143,15 @@ pub fn engine_status(engine: &str) -> bool {
 
 /// OCR a screenshot already on the clipboard.
 #[cfg(target_os = "windows")]
-pub fn recognize_clipboard(engine: &str, prep: PreprocessMode, tess_variant: &str) -> Result<String> {
-    run_engine(engine, clipboard_image()?, prep, tess_variant)
+pub fn recognize_clipboard(engine: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Result<String> {
+    run_engine(engine, clipboard_image()?, prep, tess_variant, tess_psm)
 }
 
 /// OCR an image file from disk.
 #[cfg(target_os = "windows")]
-pub fn recognize_file(engine: &str, path: &str, prep: PreprocessMode, tess_variant: &str) -> Result<String> {
+pub fn recognize_file(engine: &str, path: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Result<String> {
     let img = image::open(path).map_err(|e| anyhow!("open image: {e}"))?;
-    run_engine(engine, img, prep, tess_variant)
+    run_engine(engine, img, prep, tess_variant, tess_psm)
 }
 
 #[cfg(target_os = "windows")]
@@ -190,100 +191,81 @@ fn engine_model_label(engine: &str, tess_variant: &str) -> String {
     }
 }
 
-/// Runs BOTH engines across ALL preprocessing variants (2 x 4 = 8 runs) on one
-/// image. Raw text + timing + model + preprocessing for each; normalization is
-/// added by lib.rs. This is what the Test Mode "run all" uses.
+/// Runs one engine config and appends the result row.
 #[cfg(target_os = "windows")]
-pub fn ocr_test_all(path: &str, tess_variant: &str) -> Vec<OcrTestResult> {
-    let modes = [
-        PreprocessMode::Original,
-        PreprocessMode::Resize,
-        PreprocessMode::Grayscale,
-        PreprocessMode::ResizeGrayscale,
-    ];
-    let mut out = Vec::new();
-    for engine in ["rapidocr", "tesseract"] {
-        let model = engine_model_label(engine, tess_variant);
-        for prep in modes {
-            let img = match image::open(path) {
-                Ok(i) => i,
-                Err(e) => {
-                    out.push(OcrTestResult {
-                        engine: engine.into(),
-                        model: model.clone(),
-                        preprocess: prep.label().into(),
-                        ms: 0,
-                        text: String::new(),
-                        error: Some(format!("open image: {e}")),
-                    });
-                    continue;
-                }
-            };
-            let started = std::time::Instant::now();
-            let result = run_engine(engine, img, prep, tess_variant);
-            let ms = started.elapsed().as_millis();
-            let (text, error) = match result {
-                Ok(t) => (t, None),
-                Err(e) => (String::new(), Some(e.to_string())),
-            };
+fn run_and_push(
+    out: &mut Vec<OcrTestResult>,
+    path: &str,
+    engine: &str,
+    model: String,
+    prep: PreprocessMode,
+    tess_variant: &str,
+    tess_psm: u32,
+) {
+    let img = match image::open(path) {
+        Ok(i) => i,
+        Err(e) => {
             out.push(OcrTestResult {
                 engine: engine.into(),
-                model: model.clone(),
-                preprocess: prep.label().into(),
-                ms,
-                text,
-                error,
+                model,
+                preprocess: prep.resolve(engine).label().into(),
+                ms: 0,
+                text: String::new(),
+                error: Some(format!("open image: {e}")),
             });
+            return;
+        }
+    };
+    let started = std::time::Instant::now();
+    let result = run_engine(engine, img, prep, tess_variant, tess_psm);
+    let ms = started.elapsed().as_millis();
+    let (text, error) = match result {
+        Ok(t) => (t, None),
+        Err(e) => (String::new(), Some(e.to_string())),
+    };
+    out.push(OcrTestResult {
+        engine: engine.into(),
+        model,
+        preprocess: prep.resolve(engine).label().into(),
+        ms,
+        text,
+        error,
+    });
+}
+
+/// Tuning sweep for Test Mode: RapidOCR once (its model/prep are fixed) plus
+/// Tesseract across every installed data set x PSM {3,6,11}, so the best
+/// Tesseract config can be found empirically. Normalization added by lib.rs.
+#[cfg(target_os = "windows")]
+pub fn ocr_test_all(path: &str) -> Vec<OcrTestResult> {
+    let mut out = Vec::new();
+
+    // RapidOCR — fixed cyrillic model, resize prep (its optimum); one run.
+    run_and_push(&mut out, path, "rapidocr", engine_model_label("rapidocr", ""), PreprocessMode::Resize, "", 6);
+
+    // Tesseract — sweep installed data sets x PSM, resize+grayscale prep.
+    for variant in ["standard", "fast", "best"] {
+        if !tesseract::has_data(variant) {
+            continue;
+        }
+        for psm in [3u32, 6, 11] {
+            let model = format!("Tesseract {variant} psm{psm}");
+            run_and_push(&mut out, path, "tesseract", model, PreprocessMode::ResizeGrayscale, variant, psm);
         }
     }
     out
 }
 
-/// Runs both engines on one image file with the given preprocessing and returns
-/// raw text + timing + model label for each. Normalization is added by lib.rs.
+/// Runs both engines on one image with the given settings (current-config view).
 #[cfg(target_os = "windows")]
-pub fn ocr_test(path: &str, prep: PreprocessMode, tess_variant: &str) -> Vec<OcrTestResult> {
+pub fn ocr_test(path: &str, prep: PreprocessMode, tess_variant: &str, tess_psm: u32) -> Vec<OcrTestResult> {
     let mut out = Vec::new();
-    for engine in ["rapidocr", "tesseract"] {
-        let img = match image::open(path) {
-            Ok(i) => i,
-            Err(e) => {
-                out.push(OcrTestResult {
-                    engine: engine.into(),
-                    model: String::new(),
-                    preprocess: prep.resolve(engine).label().into(),
-                    ms: 0,
-                    text: String::new(),
-                    error: Some(format!("open image: {e}")),
-                });
-                continue;
-            }
-        };
-        let model = match engine {
-            "tesseract" => format!("Tesseract rus+eng ({tess_variant})"),
-            _ => {
-                #[cfg(feature = "rapidocr")]
-                { rapidocr::model_label() }
-                #[cfg(not(feature = "rapidocr"))]
-                { "RapidOCR (unavailable)".to_string() }
-            }
-        };
-        let started = std::time::Instant::now();
-        let result = run_engine(engine, img, prep, tess_variant);
-        let ms = started.elapsed().as_millis();
-        let (text, error) = match result {
-            Ok(t) => (t, None),
-            Err(e) => (String::new(), Some(e.to_string())),
-        };
-        out.push(OcrTestResult {
-            engine: engine.into(),
-            model,
-            preprocess: prep.resolve(engine).label().into(),
-            ms,
-            text,
-            error,
-        });
-    }
+    run_and_push(&mut out, path, "rapidocr", engine_model_label("rapidocr", ""), prep, "", tess_psm);
+    run_and_push(
+        &mut out, path, "tesseract",
+        format!("{} psm{tess_psm}", engine_model_label("tesseract", tess_variant)),
+        prep, tess_variant, tess_psm,
+    );
     out
 }
 
@@ -331,9 +313,18 @@ mod tesseract {
         None
     }
 
-    /// Bundled tessdata dir for the chosen variant ("standard" | "fast"), if present.
+    /// True if the given data set ("standard"|"fast"|"best") is installed.
+    pub fn has_data(variant: &str) -> bool {
+        tessdata_dir(variant).is_some()
+    }
+
+    /// Bundled tessdata dir for the chosen variant ("standard"|"fast"|"best"), if present.
     fn tessdata_dir(variant: &str) -> Option<PathBuf> {
-        let sub = if variant == "fast" { "tessdata-fast" } else { "tessdata-standard" };
+        let sub = match variant {
+            "fast" => "tessdata-fast",
+            "best" => "tessdata-best",
+            _ => "tessdata-standard",
+        };
         let mut candidates: Vec<PathBuf> = Vec::new();
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
@@ -373,7 +364,7 @@ mod tesseract {
         }
     }
 
-    pub fn recognize(img: image::DynamicImage, variant: &str) -> Result<String> {
+    pub fn recognize(img: image::DynamicImage, variant: &str, psm: u32) -> Result<String> {
         let exe = exe().ok_or_else(|| anyhow!("tesseract_not_installed"))?;
         let tessdata = tessdata_dir(variant);
 
@@ -381,8 +372,11 @@ mod tesseract {
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
 
         let langs = langs(&exe, tessdata.as_ref());
+        let psm = if (3..=13).contains(&psm) { psm } else { 6 };
+        let psm_s = psm.to_string();
         let mut cmd = Command::new(&exe);
-        cmd.arg(&tmp).arg("stdout").args(["-l", &langs, "--psm", "6"]);
+        // --oem 1 = LSTM engine only (best/fast data are LSTM-only anyway).
+        cmd.arg(&tmp).arg("stdout").args(["-l", &langs, "--oem", "1", "--psm", &psm_s]);
         // Mixed RU/EN text (esp. Latin-Cyrillic hyphenated tokens like
         // "rec-модели") is mangled when Tesseract coerces a word toward one
         // language's dictionary. Turning the dictionaries off makes it read
@@ -522,11 +516,11 @@ mod rapidocr {
 #[cfg(not(target_os = "windows"))]
 pub fn engine_status(_engine: &str) -> bool { false }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_clipboard(_engine: &str, _prep: PreprocessMode, _tess: &str) -> Result<String> {
+pub fn recognize_clipboard(_engine: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Result<String> {
     Err(anyhow!("OCR is Windows-only"))
 }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_file(_engine: &str, _path: &str, _prep: PreprocessMode, _tess: &str) -> Result<String> {
+pub fn recognize_file(_engine: &str, _path: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Result<String> {
     Err(anyhow!("OCR is Windows-only"))
 }
 #[cfg(not(target_os = "windows"))]
@@ -540,6 +534,6 @@ pub struct OcrTestResult {
     pub error: Option<String>,
 }
 #[cfg(not(target_os = "windows"))]
-pub fn ocr_test(_path: &str, _prep: PreprocessMode, _tess: &str) -> Vec<OcrTestResult> { Vec::new() }
+pub fn ocr_test(_path: &str, _prep: PreprocessMode, _tess: &str, _psm: u32) -> Vec<OcrTestResult> { Vec::new() }
 #[cfg(not(target_os = "windows"))]
-pub fn ocr_test_all(_path: &str, _tess: &str) -> Vec<OcrTestResult> { Vec::new() }
+pub fn ocr_test_all(_path: &str) -> Vec<OcrTestResult> { Vec::new() }
