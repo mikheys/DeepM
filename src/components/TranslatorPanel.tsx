@@ -7,7 +7,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ScanLine, ImagePlus, ClipboardPaste, Link2 } from "lucide-react";
-import { segment, type LinkMode, pairedIndex } from "../lib/align";
+import { alignText, type LinkMode } from "../lib/align";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
 import {
   translate, detectLanguage, getModelStatus,
@@ -74,13 +74,11 @@ export default function TranslatorPanel({
   const [linkMode, setLinkMode] = useState<LinkMode>(
     () => (localStorage.getItem("linkMode") as LinkMode) || "off"
   );
-  const [activeSeg, setActiveSeg] = useState<{ src: number | null; tgt: number | null }>(
-    { src: null, tgt: null }
-  );
+  const [activeBead, setActiveBead] = useState<number | null>(null);
   const changeLinkMode = (m: LinkMode) => {
     setLinkMode(m);
     localStorage.setItem("linkMode", m);
-    setActiveSeg({ src: null, tgt: null });
+    setActiveBead(null);
   };
 
   useEffect(() => {
@@ -352,32 +350,30 @@ export default function TranslatorPanel({
     if (!MODE_OPTIONS.some((m) => m.value === mode)) setMode("standard");
   }, [modelVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Link Mode: segment source & translation, pair by index ────────────
+  // ── Link Mode: Gale–Church alignment of source & translation ──────────
   const srcLangForSeg = detectedLang || (sourceLang !== "auto" ? sourceLang : "ru");
   const tgtLangForSeg = (resolvedTarget || (targetLang !== "auto" ? targetLang : "en")).toLowerCase();
-  const srcSegs = useMemo(
-    () => segment(sourceText, srcLangForSeg, linkMode),
-    [sourceText, srcLangForSeg, linkMode]
+  const alignment = useMemo(
+    () => alignText(sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg),
+    [sourceText, translatedText, linkMode, srcLangForSeg, tgtLangForSeg]
   );
-  const tgtSegs = useMemo(
-    () => segment(translatedText, tgtLangForSeg, linkMode),
-    [translatedText, tgtLangForSeg, linkMode]
-  );
-  // Clear the active pair whenever the segmentation changes (new translation).
-  useEffect(() => { setActiveSeg({ src: null, tgt: null }); }, [translatedText, linkMode]);
+  const { srcSegs, tgtSegs, beads, srcBeadOf, tgtBeadOf } = alignment;
+  // Clear the active pair whenever the alignment changes (new translation).
+  useEffect(() => { setActiveBead(null); }, [translatedText, linkMode]);
 
   // Only segment once a translation exists (so the source stays editable until
   // there's something to align against).
   const linkActive = linkMode !== "off" && translatedText.trim() !== "" && !error;
   const showSrcSegs = linkActive && srcSegs.length > 0;
   const showTgtSegs = linkActive && tgtSegs.length > 0 && !isTranslating;
+  const matchedPairs = beads.filter((b) => b.src.length && b.tgt.length).length;
 
-  const clickSrcSeg = (i: number) => setActiveSeg({ src: i, tgt: pairedIndex(i, tgtSegs.length) });
-  const clickTgtSeg = (j: number) => setActiveSeg({ src: pairedIndex(j, srcSegs.length), tgt: j });
+  const clickSrcSeg = (i: number) => setActiveBead(srcBeadOf[i] >= 0 ? srcBeadOf[i] : null);
+  const clickTgtSeg = (j: number) => setActiveBead(tgtBeadOf[j] >= 0 ? tgtBeadOf[j] : null);
 
   const segPane = (
     segs: string[],
-    active: number | null,
+    beadOf: number[],
     onClick: (i: number) => void,
     extraClass: string,
   ) => (
@@ -385,7 +381,7 @@ export default function TranslatorPanel({
       {segs.map((s, i) => (
         <span
           key={i}
-          className={`seg${active === i ? " seg-active" : ""}`}
+          className={`seg${activeBead !== null && beadOf[i] === activeBead ? " seg-active" : ""}`}
           onClick={() => onClick(i)}
         >
           {s}{" "}
@@ -434,7 +430,7 @@ export default function TranslatorPanel({
       <span className="char-count">{charCount > 0 ? t.chars(charCount) : ""}</span>
       {linkActive && (
         <span className="link-debug" title={t.link_debug_hint}>
-          {linkMode === "sentence" ? t.link_sentence : t.link_paragraph}: {srcSegs.length}/{tgtSegs.length} · {Math.min(srcSegs.length, tgtSegs.length)}↔
+          {linkMode === "sentence" ? t.link_sentence : t.link_paragraph}: {srcSegs.length}/{tgtSegs.length} · {matchedPairs}↔
         </span>
       )}
       <div className="mode-control" title={t.link_hint}>
@@ -485,7 +481,7 @@ export default function TranslatorPanel({
   // Source / target pane bodies — segmented (clickable) in Link Mode, otherwise
   // the normal editable textarea / output.
   const sourceBody = showSrcSegs
-    ? segPane(srcSegs, activeSeg.src, clickSrcSeg, "seg-pane-source")
+    ? segPane(srcSegs, srcBeadOf, clickSrcSeg, "seg-pane-source")
     : (
       <div className="textarea-wrap">
         <textarea
@@ -499,7 +495,7 @@ export default function TranslatorPanel({
       </div>
     );
   const targetBody = showTgtSegs
-    ? segPane(tgtSegs, activeSeg.tgt, clickTgtSeg, "seg-pane-target")
+    ? segPane(tgtSegs, tgtBeadOf, clickTgtSeg, "seg-pane-target")
     : outputArea;
 
   if (layout === "horizontal") {
