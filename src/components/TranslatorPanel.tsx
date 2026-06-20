@@ -69,11 +69,11 @@ export default function TranslatorPanel({
   const [ocrAvailable, setOcrAvailable] = useState(true);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
-  const [ocrEngine, setOcrEngine] = useState("windows");
+  const [ocrEngine, setOcrEngine] = useState("rapidocr");
 
   useEffect(() => {
     getSettings().then((s) => {
-      const eng = s.ocr_engine || "windows";
+      const eng = s.ocr_engine || "rapidocr";
       setOcrEngine(eng);
       return ocrStatus(eng);
     }).then(setOcrAvailable).catch(() => setOcrAvailable(false));
@@ -210,10 +210,9 @@ export default function TranslatorPanel({
   const ocrErr = (e: unknown) => {
     const s = String(e);
     setOcrError(
-      s.includes("no_ocr_language") ? t.ocr_no_lang
-        : s.includes("tesseract_not_installed") ? t.ocr_tesseract_missing
-        : s.includes("rapidocr_models_missing") ? t.ocr_rapidocr_no_models
-        : s.includes("rapidocr_unavailable") ? t.ocr_rapidocr_soon
+      s.includes("tesseract_not_installed") ? t.ocr_tesseract_missing
+        : s.includes("rapidocr_models_missing") || s.includes("rapidocr_unavailable")
+          ? t.ocr_rapidocr_no_models
         : s.includes("no_image") ? t.ocr_no_image : s
     );
   };
@@ -261,9 +260,8 @@ export default function TranslatorPanel({
       {ocrBusy && <div className="ocr-status">{t.ocr_working}</div>}
       {!ocrAvailable && (
         <div className="ocr-status ocr-warn">{
-          ocrEngine === "rapidocr" ? t.ocr_rapidocr_soon
-            : ocrEngine === "tesseract" ? t.ocr_tesseract_missing
-            : t.ocr_no_lang
+          ocrEngine === "tesseract" ? t.ocr_tesseract_missing
+            : t.ocr_rapidocr_no_models
         }</div>
       )}
       {ocrError && <div className="ocr-status ocr-warn">{ocrError}</div>}

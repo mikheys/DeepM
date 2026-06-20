@@ -142,6 +142,9 @@ export async function ocrFromClipboard(engine: string): Promise<string> {
 export async function ocrFromFile(engine: string, path: string): Promise<string> {
   return invoke("ocr_from_file", { engine, path });
 }
+export async function ocrTest(path: string): Promise<import("./types").OcrTestResult[]> {
+  return invoke("ocr_test", { path });
+}
 export async function launchSnip(): Promise<void> {
   return invoke("launch_snip");
 }

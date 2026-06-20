@@ -20,9 +20,15 @@ export type Strings = {
   ocr_file: string;
   ocr_file_hint: string;
   ocr_working: string;
-  ocr_no_lang: string;
   ocr_no_image: string;
   ocr_empty: string;
+  back: string;
+  ocr_test_title: string;
+  ocr_test_intro: string;
+  ocr_test_pick: string;
+  ocr_test_prep: string;
+  ocr_test_raw: string;
+  ocr_test_normalized: string;
   auto_detect: string;
   translating: string;
   chars: (n: number) => string;
@@ -111,12 +117,23 @@ export type Strings = {
   settings_floating_hint: string;
   settings_ocr_engine: string;
   settings_ocr_engine_hint: string;
-  ocr_engine_windows: string;
   ocr_engine_tesseract: string;
   ocr_engine_rapidocr: string;
   ocr_tesseract_missing: string;
-  ocr_rapidocr_soon: string;
   ocr_rapidocr_no_models: string;
+  settings_ocr_preprocess: string;
+  settings_ocr_preprocess_hint: string;
+  ocr_prep_resize_grayscale: string;
+  ocr_prep_resize: string;
+  ocr_prep_grayscale: string;
+  ocr_prep_original: string;
+  settings_tesseract_data: string;
+  settings_tesseract_data_hint: string;
+  tesseract_data_standard: string;
+  tesseract_data_fast: string;
+  settings_ocr_test: string;
+  settings_ocr_test_btn: string;
+  settings_ocr_test_hint: string;
   settings_autostart: string;
   settings_start_tray: string;
   settings_locale: string;
@@ -160,9 +177,15 @@ const en: Strings = {
   ocr_file: "Image file",
   ocr_file_hint: "Pick an image file and translate its text",
   ocr_working: "Recognising…",
-  ocr_no_lang: "OCR language not installed. Add it in Windows Settings → Time & Language → Language.",
   ocr_no_image: "No image on the clipboard.",
   ocr_empty: "No text recognised in the image.",
+  back: "Back",
+  ocr_test_title: "OCR Test Mode",
+  ocr_test_intro: "Run both engines on one image and compare raw vs normalized text, timing, model and preprocessing. Uses the current OCR preprocessing / Tesseract data settings.",
+  ocr_test_pick: "Pick an image",
+  ocr_test_prep: "preprocessing",
+  ocr_test_raw: "Raw",
+  ocr_test_normalized: "Normalized",
   auto_detect: "Auto-detect",
   translating: "Translating…",
   chars: (n) => `${n} chars`,
@@ -249,12 +272,23 @@ const en: Strings = {
   settings_floating_hint: "Appears when text is selected",
   settings_ocr_engine: "OCR engine",
   settings_ocr_engine_hint: "Engine for screenshot/image text recognition",
-  ocr_engine_windows: "Windows (built-in)",
-  ocr_engine_tesseract: "Tesseract (install separately)",
-  ocr_engine_rapidocr: "RapidOCR (special build)",
-  ocr_tesseract_missing: "Tesseract is not installed. Get it from github.com/UB-Mannheim/tesseract and add Russian during setup.",
-  ocr_rapidocr_soon: "RapidOCR only works in the RapidOCR build (run it with `npm run dev:rapidocr`). Otherwise use Windows or Tesseract.",
-  ocr_rapidocr_no_models: "RapidOCR models are missing. Download the RapidOCR pack into the models/rapidocr folder.",
+  ocr_engine_tesseract: "Tesseract (built-in)",
+  ocr_engine_rapidocr: "RapidOCR (recommended)",
+  ocr_tesseract_missing: "Bundled Tesseract not found.",
+  ocr_rapidocr_no_models: "RapidOCR models not found. Reinstall, or drop a PP-OCR set into the models/rapidocr folder.",
+  settings_ocr_preprocess: "OCR preprocessing",
+  settings_ocr_preprocess_hint: "Image prep before recognition (compare in OCR Test Mode)",
+  ocr_prep_resize_grayscale: "Resize + grayscale",
+  ocr_prep_resize: "Resize only",
+  ocr_prep_grayscale: "Grayscale only",
+  ocr_prep_original: "Original",
+  settings_tesseract_data: "Tesseract data",
+  settings_tesseract_data_hint: "Language data set: standard (more accurate) or fast (smaller)",
+  tesseract_data_standard: "Standard",
+  tesseract_data_fast: "Fast",
+  settings_ocr_test: "OCR Test Mode",
+  settings_ocr_test_btn: "Open OCR Test…",
+  settings_ocr_test_hint: "Compare RapidOCR vs Tesseract on one image",
   settings_autostart: "Start with Windows",
   settings_start_tray: "Start in tray",
   settings_locale: "Interface language",
@@ -294,9 +328,15 @@ const ru: Strings = {
   ocr_file: "Файл",
   ocr_file_hint: "Выбрать картинку и перевести текст с неё",
   ocr_working: "Распознаю…",
-  ocr_no_lang: "Не установлен языковой пакет OCR. Добавьте его в Параметрах Windows → Время и язык → Язык.",
   ocr_no_image: "В буфере обмена нет изображения.",
   ocr_empty: "На изображении не распознан текст.",
+  back: "Назад",
+  ocr_test_title: "Тест OCR",
+  ocr_test_intro: "Прогнать оба движка на одной картинке и сравнить сырой и нормализованный текст, время, модель и препроцессинг. Используются текущие настройки препроцессинга / данных Tesseract.",
+  ocr_test_pick: "Выбрать картинку",
+  ocr_test_prep: "препроцессинг",
+  ocr_test_raw: "Сырой",
+  ocr_test_normalized: "После нормализации",
   auto_detect: "Авто-определение",
   translating: "Перевод…",
   chars: (n) => `${n} симв.`,
@@ -383,12 +423,23 @@ const ru: Strings = {
   settings_floating_hint: "Появляется при выделении текста",
   settings_ocr_engine: "Движок OCR",
   settings_ocr_engine_hint: "Чем распознавать текст со скриншотов/картинок",
-  ocr_engine_windows: "Windows (встроенный)",
-  ocr_engine_tesseract: "Tesseract (ставится отдельно)",
-  ocr_engine_rapidocr: "RapidOCR (отдельная сборка)",
-  ocr_tesseract_missing: "Tesseract не установлен. Скачайте с github.com/UB-Mannheim/tesseract и при установке добавьте русский язык.",
-  ocr_rapidocr_soon: "RapidOCR работает только в RapidOCR-сборке (запуск: `npm run dev:rapidocr`). Иначе выберите Windows или Tesseract.",
-  ocr_rapidocr_no_models: "Нет моделей RapidOCR. Скачайте пак RapidOCR в папку models/rapidocr.",
+  ocr_engine_tesseract: "Tesseract (встроенный)",
+  ocr_engine_rapidocr: "RapidOCR (рекомендуется)",
+  ocr_tesseract_missing: "Встроенный Tesseract не найден.",
+  ocr_rapidocr_no_models: "Модели RapidOCR не найдены. Переустановите или положите набор PP-OCR в папку models/rapidocr.",
+  settings_ocr_preprocess: "Препроцессинг OCR",
+  settings_ocr_preprocess_hint: "Обработка картинки перед распознаванием (сравните в Тесте OCR)",
+  ocr_prep_resize_grayscale: "Увеличение + ч/б",
+  ocr_prep_resize: "Только увеличение",
+  ocr_prep_grayscale: "Только ч/б",
+  ocr_prep_original: "Без обработки",
+  settings_tesseract_data: "Данные Tesseract",
+  settings_tesseract_data_hint: "Набор языковых данных: standard (точнее) или fast (меньше)",
+  tesseract_data_standard: "Стандартный",
+  tesseract_data_fast: "Быстрый",
+  settings_ocr_test: "Тест OCR",
+  settings_ocr_test_btn: "Открыть тест OCR…",
+  settings_ocr_test_hint: "Сравнить RapidOCR и Tesseract на одной картинке",
   settings_autostart: "Автозапуск с Windows",
   settings_start_tray: "Запускаться в трей",
   settings_locale: "Язык интерфейса",

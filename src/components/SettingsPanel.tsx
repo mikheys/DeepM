@@ -12,9 +12,10 @@ type Props = {
   onClose?: () => void;
   locale: Locale;
   onLocaleChange: (l: Locale) => void;
+  onOpenOcrTest?: () => void;
 };
 
-export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props) {
+export default function SettingsPanel({ onClose, locale, onLocaleChange, onOpenOcrTest }: Props) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saved, setSaved] = useState(false);
@@ -239,11 +240,41 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
               value={settings.ocr_engine}
               onChange={(e) => update("ocr_engine", e.target.value)}
             >
-              <option value="windows">{t.ocr_engine_windows}</option>
-              <option value="tesseract">{t.ocr_engine_tesseract}</option>
               <option value="rapidocr">{t.ocr_engine_rapidocr}</option>
+              <option value="tesseract">{t.ocr_engine_tesseract}</option>
             </select>
             <span className="settings-hint">{t.settings_ocr_engine_hint}</span>
+          </div>
+          <div className="settings-row">
+            <label>{t.settings_ocr_preprocess}</label>
+            <select
+              value={settings.ocr_preprocess}
+              onChange={(e) => update("ocr_preprocess", e.target.value)}
+            >
+              <option value="resize_grayscale">{t.ocr_prep_resize_grayscale}</option>
+              <option value="resize">{t.ocr_prep_resize}</option>
+              <option value="grayscale">{t.ocr_prep_grayscale}</option>
+              <option value="original">{t.ocr_prep_original}</option>
+            </select>
+            <span className="settings-hint">{t.settings_ocr_preprocess_hint}</span>
+          </div>
+          <div className="settings-row">
+            <label>{t.settings_tesseract_data}</label>
+            <select
+              value={settings.tesseract_data}
+              onChange={(e) => update("tesseract_data", e.target.value)}
+            >
+              <option value="standard">{t.tesseract_data_standard}</option>
+              <option value="fast">{t.tesseract_data_fast}</option>
+            </select>
+            <span className="settings-hint">{t.settings_tesseract_data_hint}</span>
+          </div>
+          <div className="settings-row">
+            <label>{t.settings_ocr_test}</label>
+            <button className="btn-secondary" onClick={() => onOpenOcrTest?.()}>
+              {t.settings_ocr_test_btn}
+            </button>
+            <span className="settings-hint">{t.settings_ocr_test_hint}</span>
           </div>
           <div className="settings-row">
             <label>{t.settings_autostart}</label>

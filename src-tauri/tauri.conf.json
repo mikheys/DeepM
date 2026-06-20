@@ -36,7 +36,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["engine/*"],
+    "resources": [
+      "engine/*",
+      "tesseract/*",
+      "tesseract/tessdata-standard/*",
+      "tesseract/tessdata-fast/*",
+      "rapidocr/*"
+    ],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": {

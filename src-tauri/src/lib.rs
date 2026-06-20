@@ -584,6 +584,15 @@ async fn gpu_status() -> Result<serde_json::Value, String> {
 
 // ── OCR (screenshot translation) ─────────────────────────────────────────────
 
+/// Reads OCR options (preprocess mode + Tesseract data variant) from settings.
+async fn ocr_opts(state: &AppState) -> (os_integration::ocr::PreprocessMode, String) {
+    let s = state.settings.lock().await;
+    (
+        os_integration::ocr::PreprocessMode::parse(&s.ocr_preprocess),
+        s.tesseract_data.clone(),
+    )
+}
+
 /// Whether the chosen OCR backend is usable right now.
 #[tauri::command]
 async fn ocr_status(engine: String) -> Result<bool, String> {
@@ -592,22 +601,52 @@ async fn ocr_status(engine: String) -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
-/// OCR the image currently on the clipboard (a screenshot) → text.
+/// OCR the image currently on the clipboard (a screenshot) → normalized text.
 #[tauri::command]
-async fn ocr_from_clipboard(engine: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine))
+async fn ocr_from_clipboard(engine: String, state: State<'_, AppState>) -> Result<String, String> {
+    let (prep, tess) = ocr_opts(&state).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&engine, prep, &tess))
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(core::ocr_normalize::normalize_ocr_text(&text))
 }
 
-/// OCR an image file from disk → text.
+/// OCR an image file from disk → normalized text.
 #[tauri::command]
-async fn ocr_from_file(engine: String, path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path))
+async fn ocr_from_file(engine: String, path: String, state: State<'_, AppState>) -> Result<String, String> {
+    let (prep, tess) = ocr_opts(&state).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&engine, &path, prep, &tess))
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(core::ocr_normalize::normalize_ocr_text(&text))
+}
+
+/// OCR Test Mode: run both engines on one image, returning raw + normalized
+/// text, timing, model label and preprocessing for each (for comparison).
+#[tauri::command]
+async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (prep, tess) = ocr_opts(&state).await;
+    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess))
+        .await
+        .map_err(|e| e.to_string())?;
+    let enriched: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|r| {
+            let normalized = core::ocr_normalize::normalize_ocr_text(&r.text);
+            serde_json::json!({
+                "engine": r.engine,
+                "model": r.model,
+                "preprocess": r.preprocess,
+                "ms": r.ms,
+                "text": r.text,
+                "normalized": normalized,
+                "error": r.error,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!(enriched))
 }
 
 /// Launches the built-in Windows region snipping tool (Win+Shift+S). The user
@@ -892,6 +931,12 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            // Tell the OCR layer where bundled Tesseract / RapidOCR models live.
+            #[cfg(target_os = "windows")]
+            os_integration::ocr::set_resource_dir(
+                handle.path().resource_dir().unwrap_or_default(),
+            );
+
             // Tray
             if let Err(e) = os_integration::setup_tray(&handle, show_floating) {
                 log::warn!("Tray setup failed: {e}");
@@ -1171,6 +1216,7 @@ pub fn run() {
             ocr_status,
             ocr_from_clipboard,
             ocr_from_file,
+            ocr_test,
             launch_snip,
             set_autostart,
             get_autostart,

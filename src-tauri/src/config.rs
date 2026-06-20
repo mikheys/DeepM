@@ -48,9 +48,15 @@ pub struct AppSettings {
     /// global hotkeys are suppressed.
     #[serde(default)]
     pub floating_exclusions: Vec<String>,
-    /// OCR backend: "windows" | "tesseract" | "rapidocr".
+    /// OCR backend: "rapidocr" (default) | "tesseract".
     #[serde(default = "default_ocr_engine")]
     pub ocr_engine: String,
+    /// Image preprocessing for OCR: "original" | "resize" | "grayscale" | "resize_grayscale".
+    #[serde(default = "default_ocr_preprocess")]
+    pub ocr_preprocess: String,
+    /// Tesseract language data set: "standard" | "fast".
+    #[serde(default = "default_tesseract_data")]
+    pub tesseract_data: String,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -70,7 +76,15 @@ fn default_model_version() -> String {
 }
 
 fn default_ocr_engine() -> String {
-    "windows".to_string()
+    "rapidocr".to_string()
+}
+
+fn default_ocr_preprocess() -> String {
+    "resize_grayscale".to_string()
+}
+
+fn default_tesseract_data() -> String {
+    "standard".to_string()
 }
 
 fn default_locale() -> String {
@@ -96,14 +110,16 @@ impl Default for AppSettings {
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
             floating_exclusions: Vec::new(),
-            ocr_engine: "windows".to_string(),
+            ocr_engine: "rapidocr".to_string(),
+            ocr_preprocess: "resize_grayscale".to_string(),
+            tesseract_data: "standard".to_string(),
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }
     }
 }
 
-const CURRENT_SCHEMA: u32 = 3;
+const CURRENT_SCHEMA: u32 = 4;
 
 pub fn default_model_path() -> String {
     dirs::data_local_dir()
@@ -150,6 +166,10 @@ fn migrate(settings: &mut AppSettings) {
     if settings.schema_version < 3 {
         settings.default_source_lang = "auto".to_string();
         settings.default_target_lang = "auto".to_string();
+    }
+    // v4: Windows OCR was removed; RapidOCR is the default engine now.
+    if settings.schema_version < 4 && settings.ocr_engine == "windows" {
+        settings.ocr_engine = "rapidocr".to_string();
     }
     settings.schema_version = CURRENT_SCHEMA;
 }

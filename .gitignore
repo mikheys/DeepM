@@ -15,6 +15,12 @@ src-tauri/engine/
 # CUDA add-on pack staged for release
 src-tauri/cuda-pack/
 
+# ── OCR resources staged for bundling (stage with scripts/stage-ocr) ──
+# Bundled Tesseract (exe + DLLs + tessdata-standard/fast) and default
+# RapidOCR PP-OCRv5 cyrillic models (det.onnx/rec.onnx/dict.txt).
+src-tauri/tesseract/
+src-tauri/rapidocr/
+
 # ── Downloaded archives & partial downloads ───────────────
 *.zip
 *.crdownload
@@ -46,3 +52,6 @@ build.log
 # CUDA slim pack staging
 src-tauri/slim-pack/
 rapidocr-check.log
+etap-1-mvp-yadro-i-model.md
+etap-2-sistemnaya-integraciya.md
+etap-3-dizayn-i-dopolnitelnye-funkcii.md

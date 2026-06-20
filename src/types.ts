@@ -110,8 +110,24 @@ export type AppSettings = {
   triple_copy_interval_ms: number;
   triple_copy_count: number;
   floating_exclusions: string[];
+  /** OCR backend: "rapidocr" (default) | "tesseract". */
   ocr_engine: string;
+  /** OCR image preprocessing: "original" | "resize" | "grayscale" | "resize_grayscale". */
+  ocr_preprocess: string;
+  /** Tesseract language data set: "standard" | "fast". */
+  tesseract_data: string;
   locale: string;
 };
 
-export type AppView = "translator" | "settings" | "history" | "model_manager" | "onboarding";
+export type AppView =
+  | "translator" | "settings" | "history" | "model_manager" | "onboarding" | "ocr_test";
+
+export type OcrTestResult = {
+  engine: string;
+  model: string;
+  preprocess: string;
+  ms: number;
+  text: string;
+  normalized: string;
+  error: string | null;
+};

@@ -10,6 +10,7 @@ import TranslatorPanel from "./components/TranslatorPanel";
 import ModelManager from "./components/ModelManager";
 import HistoryPanel from "./components/HistoryPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import OcrTestPanel from "./components/OcrTestPanel";
 import FloatingButton from "./components/FloatingButton";
 import { getModelStatus, getSettings } from "./api";
 import { listen } from "@tauri-apps/api/event";
@@ -212,8 +213,10 @@ function MainApp() {
             onClose={() => setView("translator")}
             locale={locale}
             onLocaleChange={(l) => setLocale(l)}
+            onOpenOcrTest={() => setView("ocr_test")}
           />
         )}
+        {view === "ocr_test" && <OcrTestPanel onBack={() => setView("settings")} />}
       </main>
     </div>
   );
