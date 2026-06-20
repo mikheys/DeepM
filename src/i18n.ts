@@ -29,6 +29,9 @@ export type Strings = {
   ocr_test_prep: string;
   ocr_test_raw: string;
   ocr_test_normalized: string;
+  ocr_test_copy: string;
+  ocr_test_copied: string;
+  ocr_test_running_all: string;
   auto_detect: string;
   translating: string;
   chars: (n: number) => string;
@@ -182,11 +185,14 @@ const en: Strings = {
   ocr_empty: "No text recognised in the image.",
   back: "Back",
   ocr_test_title: "OCR Test Mode",
-  ocr_test_intro: "Run both engines on one image and compare raw vs normalized text, timing, model and preprocessing. Uses the current OCR preprocessing / Tesseract data settings.",
+  ocr_test_intro: "Runs both engines across every preprocessing variant (8 runs) on one image. Compare raw vs normalized text, timing and model, then copy the whole report as text.",
   ocr_test_pick: "Pick an image",
   ocr_test_prep: "preprocessing",
   ocr_test_raw: "Raw",
   ocr_test_normalized: "Normalized",
+  ocr_test_copy: "Copy report",
+  ocr_test_copied: "Copied",
+  ocr_test_running_all: "Running all variants…",
   auto_detect: "Auto-detect",
   translating: "Translating…",
   chars: (n) => `${n} chars`,
@@ -334,11 +340,14 @@ const ru: Strings = {
   ocr_empty: "На изображении не распознан текст.",
   back: "Назад",
   ocr_test_title: "Тест OCR",
-  ocr_test_intro: "Прогнать оба движка на одной картинке и сравнить сырой и нормализованный текст, время, модель и препроцессинг. Используются текущие настройки препроцессинга / данных Tesseract.",
+  ocr_test_intro: "Прогоняет оба движка по всем вариантам препроцессинга (8 прогонов) на одной картинке. Сравни сырой и нормализованный текст, время и модель, затем скопируй весь отчёт текстом.",
   ocr_test_pick: "Выбрать картинку",
   ocr_test_prep: "препроцессинг",
   ocr_test_raw: "Сырой",
   ocr_test_normalized: "После нормализации",
+  ocr_test_copy: "Скопировать отчёт",
+  ocr_test_copied: "Скопировано",
+  ocr_test_running_all: "Прогоняю все варианты…",
   auto_detect: "Авто-определение",
   translating: "Перевод…",
   chars: (n) => `${n} симв.`,

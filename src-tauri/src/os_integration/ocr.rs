@@ -177,6 +177,68 @@ pub struct OcrTestResult {
     pub error: Option<String>,
 }
 
+#[cfg(target_os = "windows")]
+fn engine_model_label(engine: &str, tess_variant: &str) -> String {
+    match engine {
+        "tesseract" => format!("Tesseract rus+eng ({tess_variant})"),
+        _ => {
+            #[cfg(feature = "rapidocr")]
+            { rapidocr::model_label() }
+            #[cfg(not(feature = "rapidocr"))]
+            { "RapidOCR (unavailable)".to_string() }
+        }
+    }
+}
+
+/// Runs BOTH engines across ALL preprocessing variants (2 x 4 = 8 runs) on one
+/// image. Raw text + timing + model + preprocessing for each; normalization is
+/// added by lib.rs. This is what the Test Mode "run all" uses.
+#[cfg(target_os = "windows")]
+pub fn ocr_test_all(path: &str, tess_variant: &str) -> Vec<OcrTestResult> {
+    let modes = [
+        PreprocessMode::Original,
+        PreprocessMode::Resize,
+        PreprocessMode::Grayscale,
+        PreprocessMode::ResizeGrayscale,
+    ];
+    let mut out = Vec::new();
+    for engine in ["rapidocr", "tesseract"] {
+        let model = engine_model_label(engine, tess_variant);
+        for prep in modes {
+            let img = match image::open(path) {
+                Ok(i) => i,
+                Err(e) => {
+                    out.push(OcrTestResult {
+                        engine: engine.into(),
+                        model: model.clone(),
+                        preprocess: prep.label().into(),
+                        ms: 0,
+                        text: String::new(),
+                        error: Some(format!("open image: {e}")),
+                    });
+                    continue;
+                }
+            };
+            let started = std::time::Instant::now();
+            let result = run_engine(engine, img, prep, tess_variant);
+            let ms = started.elapsed().as_millis();
+            let (text, error) = match result {
+                Ok(t) => (t, None),
+                Err(e) => (String::new(), Some(e.to_string())),
+            };
+            out.push(OcrTestResult {
+                engine: engine.into(),
+                model: model.clone(),
+                preprocess: prep.label().into(),
+                ms,
+                text,
+                error,
+            });
+        }
+    }
+    out
+}
+
 /// Runs both engines on one image file with the given preprocessing and returns
 /// raw text + timing + model label for each. Normalization is added by lib.rs.
 #[cfg(target_os = "windows")]
@@ -479,3 +541,5 @@ pub struct OcrTestResult {
 }
 #[cfg(not(target_os = "windows"))]
 pub fn ocr_test(_path: &str, _prep: PreprocessMode, _tess: &str) -> Vec<OcrTestResult> { Vec::new() }
+#[cfg(not(target_os = "windows"))]
+pub fn ocr_test_all(_path: &str, _tess: &str) -> Vec<OcrTestResult> { Vec::new() }

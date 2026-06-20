@@ -623,15 +623,9 @@ async fn ocr_from_file(engine: String, path: String, state: State<'_, AppState>)
     Ok(core::ocr_normalize::normalize_ocr_text(&text))
 }
 
-/// OCR Test Mode: run both engines on one image, returning raw + normalized
-/// text, timing, model label and preprocessing for each (for comparison).
-#[tauri::command]
-async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (prep, tess) = ocr_opts(&state).await;
-    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess))
-        .await
-        .map_err(|e| e.to_string())?;
-    let enriched: Vec<serde_json::Value> = results
+/// Turns OcrTestResult rows (raw text) into JSON with the normalized text added.
+fn enrich_ocr_results(results: Vec<os_integration::ocr::OcrTestResult>) -> serde_json::Value {
+    let rows: Vec<serde_json::Value> = results
         .into_iter()
         .map(|r| {
             let normalized = core::ocr_normalize::normalize_ocr_text(&r.text);
@@ -646,7 +640,29 @@ async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json
             })
         })
         .collect();
-    Ok(serde_json::json!(enriched))
+    serde_json::json!(rows)
+}
+
+/// OCR Test Mode: run both engines on one image with the current preprocessing,
+/// returning raw + normalized text, timing, model and preprocessing for each.
+#[tauri::command]
+async fn ocr_test(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (prep, tess) = ocr_opts(&state).await;
+    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test(&path, prep, &tess))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(enrich_ocr_results(results))
+}
+
+/// OCR Test Mode "run all": both engines x every preprocessing variant, so the
+/// full matrix can be compared / copied as text.
+#[tauri::command]
+async fn ocr_test_all(path: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (_prep, tess) = ocr_opts(&state).await;
+    let results = tokio::task::spawn_blocking(move || os_integration::ocr::ocr_test_all(&path, &tess))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(enrich_ocr_results(results))
 }
 
 /// Launches the built-in Windows region snipping tool (Win+Shift+S). The user
@@ -1217,6 +1233,7 @@ pub fn run() {
             ocr_from_clipboard,
             ocr_from_file,
             ocr_test,
+            ocr_test_all,
             launch_snip,
             set_autostart,
             get_autostart,
