@@ -15,5 +15,7 @@ pub use floating::{
     show_floating,
 };
 pub use hotkeys::{spawn_hook, SharedHookConfig};
-pub use process::{foreground_is_excluded, list_app_processes};
+pub use process::{
+    focus_source_window, foreground_is_excluded, list_app_processes, remember_source_window,
+};
 pub use tray::setup_tray;

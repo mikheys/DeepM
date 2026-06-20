@@ -13,6 +13,27 @@ mod imp {
         fn IsWindowVisible(hwnd: *mut c_void) -> i32;
         fn GetWindowTextLengthW(hwnd: *mut c_void) -> i32;
         fn GetWindow(hwnd: *mut c_void, cmd: u32) -> *mut c_void;
+        fn SetForegroundWindow(hwnd: *mut c_void) -> i32;
+    }
+
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    /// HWND of the app the user was working in when the floating button appeared.
+    static SOURCE_HWND: AtomicIsize = AtomicIsize::new(0);
+
+    /// Remember the current foreground window (the selection's owner) so the
+    /// floating "Replace" button can paste back into it later.
+    pub fn remember_source_window() {
+        unsafe { SOURCE_HWND.store(GetForegroundWindow() as isize, Ordering::Relaxed) };
+    }
+
+    /// Bring the remembered source window back to the foreground (so synthetic
+    /// Ctrl+V lands there, not in our floating webview).
+    pub fn focus_source_window() {
+        let h = SOURCE_HWND.load(Ordering::Relaxed);
+        if h != 0 {
+            unsafe { SetForegroundWindow(h as *mut c_void) };
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
     }
 
     #[link(name = "kernel32")]
@@ -107,7 +128,7 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{foreground_process_name, list_app_processes};
+pub use imp::{focus_source_window, foreground_process_name, list_app_processes, remember_source_window};
 
 #[cfg(not(target_os = "windows"))]
 pub fn foreground_process_name() -> Option<String> {
@@ -118,6 +139,12 @@ pub fn foreground_process_name() -> Option<String> {
 pub fn list_app_processes() -> Vec<String> {
     Vec::new()
 }
+
+#[cfg(not(target_os = "windows"))]
+pub fn remember_source_window() {}
+
+#[cfg(not(target_os = "windows"))]
+pub fn focus_source_window() {}
 
 /// True if the current foreground app is in the user's exclusion list.
 pub fn foreground_is_excluded(exclusions: &[String]) -> bool {

@@ -573,7 +573,12 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
 async fn floating_replace(text: String) -> Result<(), String> {
     let saved = os_integration::save_clipboard();
     os_integration::write_clipboard(&text).map_err(|e| e.to_string())?;
-    tokio::task::spawn_blocking(os_integration::paste_from_clipboard)
+    tokio::task::spawn_blocking(|| {
+        // Bring the source app back to the foreground before pasting, so Ctrl+V
+        // lands in it and not in our floating webview.
+        os_integration::focus_source_window();
+        os_integration::paste_from_clipboard()
+    })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -1169,6 +1174,10 @@ pub fn run() {
                         // translate instantly on click without copying again.
                         let src = detect_language_internal(&text);
                         let tgt = if src == "ru" { "en" } else { "ru" };
+
+                        // Remember the source app so the "Replace" button can
+                        // paste the translation back into it.
+                        os_integration::remember_source_window();
 
                         if let Err(e) = os_integration::show_floating(&h, x, y) {
                             log::debug!("show_floating failed: {e}");
