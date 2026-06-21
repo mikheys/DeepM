@@ -123,6 +123,21 @@ pub fn recognize_file(path: &str, lang_arg: &str) -> Result<String> {
     tesseract::recognize(preprocess(img), lang_arg, 6)
 }
 
+/// OCR a mixed-script image (e.g. a Chinese page with a Russian/English title).
+/// Runs two passes — `primary` (the detected dominant script) and `secondary`
+/// (the user's Latin/Cyrillic set) — then keeps, per line, whichever pass was
+/// more confident. This avoids the cross-script mixing a single `chi_sim+rus`
+/// pass produces while still recovering the minority-language lines.
+#[cfg(target_os = "windows")]
+pub fn recognize_clipboard_merged(primary: &str, secondary: &str) -> Result<String> {
+    tesseract::recognize_merged(preprocess(clipboard_image()?), primary, secondary, 6)
+}
+#[cfg(target_os = "windows")]
+pub fn recognize_file_merged(path: &str, primary: &str, secondary: &str) -> Result<String> {
+    let img = image::open(path).map_err(|e| anyhow!("open image: {e}"))?;
+    tesseract::recognize_merged(preprocess(img), primary, secondary, 6)
+}
+
 #[cfg(target_os = "windows")]
 fn clipboard_image() -> Result<image::DynamicImage> {
     let img = arboard::Clipboard::new()
@@ -380,6 +395,149 @@ mod tesseract {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// One recognized text line with its mean word confidence (0..100).
+    struct TsvLine {
+        conf: f32,
+        text: String,
+    }
+
+    /// Runs Tesseract with TSV output and groups words into lines, each with a
+    /// mean confidence. Used by the two-pass merge.
+    fn run_tsv(exe: &PathBuf, dir: &PathBuf, tmp: &PathBuf, lang: &str, psm: u32) -> Result<Vec<TsvLine>> {
+        let psm_s = psm.to_string();
+        let mut cmd = Command::new(exe);
+        cmd.arg(tmp).arg("stdout").args(["-l", lang, "--oem", "1", "--psm", &psm_s]);
+        cmd.args(["-c", "preserve_interword_spaces=1"]);
+        cmd.args(["-c", "load_system_dawg=0"]);
+        cmd.args(["-c", "load_freq_dawg=0"]);
+        cmd.args(["--tessdata-dir", &dir.to_string_lossy()]);
+        cmd.arg("tsv"); // config name → emit TSV to stdout
+        let output = cmd.no_window().output().map_err(|e| anyhow!("tesseract tsv run: {e}"))?;
+        if !output.status.success() {
+            return Err(anyhow!("tesseract tsv exit {:?}", output.status.code()));
+        }
+        Ok(parse_tsv(&String::from_utf8_lossy(&output.stdout)))
+    }
+
+    /// Parses Tesseract TSV (columns: level page block par line word left top
+    /// width height conf text) into per-line text + mean confidence, preserving
+    /// reading order.
+    fn parse_tsv(tsv: &str) -> Vec<TsvLine> {
+        let mut lines: Vec<TsvLine> = Vec::new();
+        let mut cur_key: Option<(u32, u32, u32)> = None;
+        let mut words: Vec<String> = Vec::new();
+        let mut confs: Vec<f32> = Vec::new();
+
+        let flush = |lines: &mut Vec<TsvLine>, words: &mut Vec<String>, confs: &mut Vec<f32>| {
+            if !words.is_empty() {
+                let text = words.join(" ");
+                let conf = if confs.is_empty() {
+                    0.0
+                } else {
+                    confs.iter().sum::<f32>() / confs.len() as f32
+                };
+                if !text.trim().is_empty() {
+                    lines.push(TsvLine { conf, text });
+                }
+            }
+            words.clear();
+            confs.clear();
+        };
+
+        for (i, row) in tsv.lines().enumerate() {
+            if i == 0 {
+                continue; // header
+            }
+            let c: Vec<&str> = row.split('\t').collect();
+            if c.len() < 12 {
+                continue;
+            }
+            let level: u32 = c[0].parse().unwrap_or(0);
+            if level != 5 {
+                continue; // only word rows carry text + confidence
+            }
+            let key = (
+                c[2].parse().unwrap_or(0),
+                c[3].parse().unwrap_or(0),
+                c[4].parse().unwrap_or(0),
+            );
+            if cur_key != Some(key) {
+                flush(&mut lines, &mut words, &mut confs);
+                cur_key = Some(key);
+            }
+            let conf: f32 = c[10].parse().unwrap_or(-1.0);
+            let word = c[11].trim();
+            if !word.is_empty() {
+                words.push(word.to_string());
+                if conf >= 0.0 {
+                    confs.push(conf);
+                }
+            }
+        }
+        flush(&mut lines, &mut words, &mut confs);
+        lines
+    }
+
+    /// Two-pass merge: OCR with `primary` and `secondary`, then keep the more
+    /// confident pass per line. Falls back to a plain `primary` pass if the two
+    /// passes don't segment into the same number of lines (so we never emit a
+    /// scrambled interleaving).
+    pub fn recognize_merged(
+        img: image::DynamicImage,
+        primary: &str,
+        secondary: &str,
+        psm: u32,
+    ) -> Result<String> {
+        let exe = exe().ok_or_else(|| anyhow!("tesseract_not_installed"))?;
+        let dir = data_dir();
+        let psm = if (3..=13).contains(&psm) { psm } else { 6 };
+
+        let tmp = std::env::temp_dir().join(format!("deepm_ocr_m_{}.png", std::process::id()));
+        img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
+
+        let a = run_tsv(&exe, &dir, &tmp, primary, psm);
+        let b = run_tsv(&exe, &dir, &tmp, secondary, psm);
+        let _ = std::fs::remove_file(&tmp);
+
+        let (a, b) = match (a, b) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => {
+                super::dbg_log("OCR merge: a TSV pass failed, falling back to primary");
+                return recognize(img, primary, psm);
+            }
+        };
+
+        if !a.is_empty() && a.len() == b.len() {
+            // Bias toward the primary (detected) script: only take the secondary
+            // line when it's clearly more confident.
+            const MARGIN: f32 = 5.0;
+            let mut out = String::new();
+            let mut took_secondary = 0;
+            for (la, lb) in a.iter().zip(b.iter()) {
+                let pick = if lb.conf > la.conf + MARGIN {
+                    took_secondary += 1;
+                    &lb.text
+                } else {
+                    &la.text
+                };
+                out.push_str(pick);
+                out.push('\n');
+            }
+            super::dbg_log(&format!(
+                "OCR merge: {} lines, {took_secondary} from secondary ({secondary})",
+                a.len()
+            ));
+            Ok(out.trim_end().to_string())
+        } else {
+            super::dbg_log(&format!(
+                "OCR merge: line count mismatch (primary {}, secondary {}) → primary only",
+                a.len(),
+                b.len()
+            ));
+            recognize(img, primary, psm)
+        }
+    }
+
     trait NoWindow {
         fn no_window(&mut self) -> &mut Self;
     }
@@ -423,6 +581,10 @@ pub fn detect_file_script(_path: &str) -> Option<String> { None }
 pub fn recognize_clipboard(_lang_arg: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
 #[cfg(not(target_os = "windows"))]
 pub fn recognize_file(_path: &str, _lang_arg: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
+#[cfg(not(target_os = "windows"))]
+pub fn recognize_clipboard_merged(_p: &str, _s: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
+#[cfg(not(target_os = "windows"))]
+pub fn recognize_file_merged(_path: &str, _p: &str, _s: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
 #[cfg(not(target_os = "windows"))]
 #[derive(serde::Serialize)]
 pub struct OcrTestResult {

@@ -667,37 +667,55 @@ async fn ensure_lang(app: &AppHandle, code: &str) -> bool {
     ok
 }
 
-/// Builds the `+`-joined Tesseract `-l` argument.
+/// Decides which Tesseract languages to OCR with.
 ///
-/// Key rule: when auto-detection finds a non-Latin/Cyrillic script (Chinese,
-/// Japanese, Korean, Arabic, …), OCR with ONLY that language. Combining e.g.
-/// `chi_sim+rus+eng` makes Tesseract mix scripts mid-line (Chinese pages come
-/// out half-Latin garbage). For a detected `rus`/`eng` page we keep the user's
-/// configured set, since Latin+Cyrillic coexist fine.
-async fn build_lang_arg(app: &AppHandle, enabled: Vec<String>, auto: bool, detected: Option<String>) -> String {
+/// Returns `(primary, Some(secondary))` when the page is a non-Latin/Cyrillic
+/// script (Chinese, Japanese, …) AND the user also has Latin/Cyrillic languages
+/// enabled: the caller then runs a two-pass merge so the Chinese body stays
+/// clean while a Russian/English title is still recovered. A single
+/// `chi_sim+rus` pass instead mixes scripts mid-line. Otherwise returns
+/// `(lang_arg, None)` for an ordinary single pass.
+async fn resolve_ocr_langs(
+    app: &AppHandle,
+    enabled: Vec<String>,
+    auto: bool,
+    detected: Option<String>,
+) -> (String, Option<String>) {
+    let installed = |c: &str| os_integration::ocr::is_lang_installed(c);
+
     if auto {
         if let Some(d) = detected {
             if ensure_lang(app, &d).await {
                 if d != "eng" && d != "rus" {
-                    // Exclusive: a non-Latin/Cyrillic script recognizes far
-                    // better on its own.
-                    logging::info("ocr", &format!("OCR lang: exclusive detected '{d}'"));
-                    return d;
+                    // Non-Latin/Cyrillic dominant script. Secondary = the user's
+                    // other enabled (installed) languages, for a confidence merge.
+                    let secondary: Vec<String> = enabled
+                        .into_iter()
+                        .filter(|l| l != &d && installed(l))
+                        .collect();
+                    let secondary = if secondary.is_empty() {
+                        None
+                    } else {
+                        Some(secondary.join("+"))
+                    };
+                    logging::info("ocr", &format!("OCR plan: primary '{d}', secondary {secondary:?}"));
+                    return (d, secondary);
                 }
-                // Latin/Cyrillic: fall through and combine with the enabled set.
+                // Latin/Cyrillic detected: combine with the enabled set (these
+                // coexist fine in one pass).
                 let mut langs = vec![d];
                 for l in enabled {
                     if !langs.contains(&l) {
                         langs.push(l);
                     }
                 }
-                langs.retain(|c| os_integration::ocr::is_lang_installed(c));
+                langs.retain(|c| installed(c));
                 if langs.is_empty() {
                     langs.push("eng".to_string());
                 }
                 let joined = langs.join("+");
-                logging::info("ocr", &format!("OCR lang: '{joined}' (detected '{}')", langs[0]));
-                return joined;
+                logging::info("ocr", &format!("OCR plan: '{joined}' (latin/cyrillic detected)"));
+                return (joined, None);
             }
         }
     }
@@ -708,13 +726,13 @@ async fn build_lang_arg(app: &AppHandle, enabled: Vec<String>, auto: bool, detec
             langs.push(l);
         }
     }
-    langs.retain(|c| os_integration::ocr::is_lang_installed(c));
+    langs.retain(|c| installed(c));
     if langs.is_empty() {
         langs.push("eng".to_string());
     }
     let joined = langs.join("+");
-    logging::info("ocr", &format!("OCR lang: '{joined}' (no detection)"));
-    joined
+    logging::info("ocr", &format!("OCR plan: '{joined}' (no detection)"));
+    (joined, None)
 }
 
 async fn ocr_lang_opts(state: &AppState) -> (Vec<String>, bool) {
@@ -733,8 +751,11 @@ async fn ocr_from_clipboard(state: State<'_, AppState>, app: AppHandle) -> Resul
     } else {
         None
     };
-    let lang_arg = build_lang_arg(&app, enabled, auto, detected).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&lang_arg))
+    let (primary, secondary) = resolve_ocr_langs(&app, enabled, auto, detected).await;
+    let text = tokio::task::spawn_blocking(move || match secondary {
+        Some(sec) => os_integration::ocr::recognize_clipboard_merged(&primary, &sec),
+        None => os_integration::ocr::recognize_clipboard(&primary),
+    })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -753,8 +774,11 @@ async fn ocr_from_file(path: String, state: State<'_, AppState>, app: AppHandle)
     } else {
         None
     };
-    let lang_arg = build_lang_arg(&app, enabled, auto, detected).await;
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path, &lang_arg))
+    let (primary, secondary) = resolve_ocr_langs(&app, enabled, auto, detected).await;
+    let text = tokio::task::spawn_blocking(move || match secondary {
+        Some(sec) => os_integration::ocr::recognize_file_merged(&path, &primary, &sec),
+        None => os_integration::ocr::recognize_file(&path, &primary),
+    })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
