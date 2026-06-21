@@ -395,10 +395,9 @@ mod tesseract {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    /// One recognized text line: its text, mean word confidence (0..100) and
-    /// bounding box in the (preprocessed) image's pixel space.
+    /// One recognized text line: its text and bounding box in the
+    /// (preprocessed) image's pixel space.
     struct TsvLine {
-        conf: f32,
         text: String,
         left: u32,
         top: u32,
@@ -440,8 +439,12 @@ mod tesseract {
         cmd.args(["-c", "preserve_interword_spaces=1"]);
         cmd.args(["-c", "load_system_dawg=0"]);
         cmd.args(["-c", "load_freq_dawg=0"]);
+        // Emit TSV via parameters instead of the `tsv` config file (that file
+        // lives in tessdata/configs/, which we don't bundle). Disable the
+        // default text renderer so stdout carries ONLY the TSV.
+        cmd.args(["-c", "tessedit_create_txt=0"]);
+        cmd.args(["-c", "tessedit_create_tsv=1"]);
         cmd.args(["--tessdata-dir", &dir.to_string_lossy()]);
-        cmd.arg("tsv"); // config name → emit TSV to stdout
         let output = cmd.no_window().output().map_err(|e| anyhow!("tesseract tsv run: {e}"))?;
         if !output.status.success() {
             return Err(anyhow!("tesseract tsv exit {:?}", output.status.code()));
@@ -453,7 +456,6 @@ mod tesseract {
     #[derive(Default)]
     struct LineAcc {
         words: Vec<String>,
-        confs: Vec<f32>,
         left: u32,
         top: u32,
         right: u32,
@@ -473,13 +475,7 @@ mod tesseract {
             if acc.any && !acc.words.is_empty() {
                 let text = acc.words.join(" ");
                 if !text.trim().is_empty() {
-                    let conf = if acc.confs.is_empty() {
-                        0.0
-                    } else {
-                        acc.confs.iter().sum::<f32>() / acc.confs.len() as f32
-                    };
                     lines.push(TsvLine {
-                        conf,
                         text,
                         left: acc.left,
                         top: acc.top,
@@ -516,7 +512,6 @@ mod tesseract {
             if word.is_empty() {
                 continue;
             }
-            let conf: f32 = c[10].parse().unwrap_or(-1.0);
             let (l, t, w, h): (u32, u32, u32, u32) = (
                 c[6].parse().unwrap_or(0),
                 c[7].parse().unwrap_or(0),
@@ -536,9 +531,6 @@ mod tesseract {
                 acc.bottom = acc.bottom.max(t + h);
             }
             acc.words.push(word.to_string());
-            if conf >= 0.0 {
-                acc.confs.push(conf);
-            }
         }
         flush(&mut lines, &mut acc);
         lines
