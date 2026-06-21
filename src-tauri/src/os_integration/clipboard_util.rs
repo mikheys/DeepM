@@ -91,16 +91,85 @@ pub fn copy_selection_to_clipboard() -> Result<String> {
     Ok(selected)
 }
 
-/// Returns the currently selected text, or None if nothing is selected.
+/// Returns the currently selected text, or None if nothing is selected. Gates
+/// the floating button, so it must NEVER disturb a non-text foreground app.
 ///
-/// Uses UI Automation (a non-destructive query of the focused element), NOT a
-/// synthetic Ctrl+C. This is what gates the floating button, and it must never
-/// disturb the foreground app: the old Ctrl+C approach fired on every mouse drag
-/// and broke non-text apps (e.g. space-drag panning in Photoshop switched tools).
-/// Apps that don't expose a UIA text selection simply won't show the button —
-/// that's the intended "only on real text selection" behaviour.
+/// Two non-destructive-where-it-matters layers:
+/// 1. UI Automation query of the focused element (no keystroke) — covers most
+///    native + Chromium apps.
+/// 2. If UIA finds nothing AND the foreground window has a text caret, fall back
+///    to a clipboard copy (save/restore). The caret guard is what keeps canvas
+///    apps safe: Photoshop's canvas has no caret, so the Ctrl+C never fires
+///    there, while real edit fields (Explorer rename, etc.) do have one.
 pub fn get_selected_text() -> Option<String> {
-    super::uia::selection_via_uia()
+    if let Some(text) = super::uia::selection_via_uia() {
+        return Some(text);
+    }
+    #[cfg(target_os = "windows")]
+    if foreground_has_caret() {
+        return copy_selection_nondestructive();
+    }
+    None
+}
+
+/// True if the foreground GUI thread currently shows a text caret — i.e. focus
+/// is in an editable text field. (Win32 carets only; Chromium draws its own, so
+/// Electron text fields rely on the UIA layer above.)
+#[cfg(target_os = "windows")]
+fn foreground_has_caret() -> bool {
+    use std::ffi::c_void;
+    #[repr(C)]
+    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
+    #[repr(C)]
+    struct GuiThreadInfo {
+        cb_size: u32,
+        flags: u32,
+        hwnd_active: *mut c_void,
+        hwnd_focus: *mut c_void,
+        hwnd_capture: *mut c_void,
+        hwnd_menu_owner: *mut c_void,
+        hwnd_move_size: *mut c_void,
+        hwnd_caret: *mut c_void,
+        rc_caret: Rect,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetGUIThreadInfo(id_thread: u32, pgui: *mut GuiThreadInfo) -> i32;
+    }
+    unsafe {
+        let mut gti: GuiThreadInfo = std::mem::zeroed();
+        gti.cb_size = std::mem::size_of::<GuiThreadInfo>() as u32;
+        GetGUIThreadInfo(0, &mut gti) != 0 && !gti.hwnd_caret.is_null()
+    }
+}
+
+/// Clipboard-copy fallback (Ctrl+C with save/restore). Only called from
+/// get_selected_text when a text caret is present, so it never touches canvas
+/// apps. Returns None if nothing actually got selected.
+#[cfg(target_os = "windows")]
+fn copy_selection_nondestructive() -> Option<String> {
+    use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+
+    let prev = read_clipboard().ok();
+    let prev_str = prev.as_deref().unwrap_or("").to_string();
+
+    let mut enigo = Enigo::new(&Settings::default()).ok()?;
+    prepare_for_synthetic_input(&mut enigo);
+    std::thread::sleep(Duration::from_millis(40));
+    enigo.key(Key::Control, Direction::Press).ok()?;
+    enigo.key(Key::Unicode('c'), Direction::Click).ok()?;
+    enigo.key(Key::Control, Direction::Release).ok()?;
+    std::thread::sleep(Duration::from_millis(120));
+
+    let selected = read_clipboard().ok()?;
+    if !prev_str.is_empty() {
+        let _ = write_clipboard(&prev_str);
+    }
+    if selected.trim().is_empty() || selected == prev_str {
+        None
+    } else {
+        Some(selected)
+    }
 }
 
 /// Simulates Ctrl+V (paste).
