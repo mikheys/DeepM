@@ -69,6 +69,21 @@ export async function detectLanguage(text: string): Promise<string> {
   return invoke("detect_language", { text });
 }
 
+/** Appends an error/info line to the app-wide log file. Never throws. */
+export function logEvent(level: "ERROR" | "INFO", source: string, message: string): void {
+  invoke("log_event", { level, source, message }).catch(() => {});
+}
+
+/** Returns the tail of the log file (for the "Report a problem" view). */
+export async function readLog(): Promise<string> {
+  return invoke("read_log");
+}
+
+/** Opens the folder that holds the log file in the system file manager. */
+export async function openLogFolder(): Promise<void> {
+  return invoke("open_log_folder");
+}
+
 export function onDownloadProgress(
   callback: (progress: number, speed_mbps: number) => void
 ) {

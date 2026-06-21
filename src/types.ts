@@ -114,6 +114,10 @@ export type AppSettings = {
   ocr_languages: string[];
   /** Auto-detect the image script and add/download the matching language. */
   ocr_auto_lang: boolean;
+  /** Preferred language to translate INTO when source/target are "auto". */
+  auto_target_priority: string;
+  /** Master switch for the global keyboard/mouse hook (restart to apply). */
+  global_hotkeys: boolean;
   locale: string;
 };
 

@@ -32,16 +32,19 @@ type Props = {
   onInitialTextConsumed?: () => void;
   defaultSourceLang?: string;
   defaultTargetLang?: string;
+  /** Preferred language to translate INTO when target is "auto". */
+  autoTargetPriority?: string;
 };
 
 type TranslationMode =
   | "standard" | "contextual" | "formatted"
   | "style" | "structured" | "delimiter";
 
-function oppositePrimary(lang: string): string {
-  if (lang === "en") return "ru";
-  if (lang === "ru") return "en";
-  return "en";
+// Picks the target for "auto" mode: foreign text goes INTO the priority
+// language; text already in the priority language goes into the secondary one.
+function autoTargetFor(lang: string, priority: string): string {
+  const secondary = priority === "ru" ? "en" : "ru";
+  return lang === priority ? secondary : priority;
 }
 
 export default function TranslatorPanel({
@@ -51,6 +54,7 @@ export default function TranslatorPanel({
   onInitialTextConsumed,
   defaultSourceLang,
   defaultTargetLang,
+  autoTargetPriority = "ru",
 }: Props) {
   const { t } = useI18n();
   const [sourceText, setSourceText] = useState(initialText ?? "");
@@ -129,7 +133,7 @@ export default function TranslatorPanel({
         } catch { /* keep defaults */ }
       }
       if (resolvedTgt === "auto") {
-        resolvedTgt = oppositePrimary(resolvedSrc);
+        resolvedTgt = autoTargetFor(resolvedSrc, autoTargetPriority);
       }
 
       try {
@@ -330,7 +334,7 @@ export default function TranslatorPanel({
 
   // Show resolved target when "auto" is selected
   const resolvedTarget = targetLang === "auto" && detectedLang
-    ? oppositePrimary(detectedLang)
+    ? autoTargetFor(detectedLang, autoTargetPriority)
     : null;
 
   const MODE_OPTIONS: { value: TranslationMode; label: string }[] =

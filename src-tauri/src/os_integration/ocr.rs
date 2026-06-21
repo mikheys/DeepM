@@ -305,6 +305,16 @@ mod tesseract {
     pub fn detect_script(img: image::DynamicImage) -> Option<String> {
         let exe = exe()?;
         let dir = data_dir();
+
+        // OSD needs osd.traineddata in the tessdata dir. If it's missing (e.g.
+        // it was never staged into the build) detection silently fails and any
+        // non-Latin/Cyrillic text (Chinese, Japanese, …) gets OCR'd with the
+        // wrong language. Make that situation diagnosable instead of silent.
+        if !dir.join("osd.traineddata").exists() {
+            super::dbg_log("OSD SKIP: osd.traineddata missing in tessdata dir (auto language detection disabled)");
+            return None;
+        }
+
         let tmp = std::env::temp_dir().join(format!("deepm_osd_{}.png", std::process::id()));
         img.save(&tmp).ok()?;
         let out = Command::new(&exe)
@@ -319,8 +329,19 @@ mod tesseract {
         let text = String::from_utf8_lossy(&out.stdout);
         let script = text
             .lines()
-            .find_map(|l| l.trim().strip_prefix("Script: ").map(|s| s.trim().to_string()))?;
-        script_to_lang(&script).map(String::from)
+            .find_map(|l| l.trim().strip_prefix("Script: ").map(|s| s.trim().to_string()));
+        match script {
+            Some(s) => {
+                let lang = script_to_lang(&s).map(String::from);
+                super::dbg_log(&format!("OSD: script={s} -> lang={lang:?}"));
+                lang
+            }
+            None => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                super::dbg_log(&format!("OSD: no script line (stderr={})", stderr.trim()));
+                None
+            }
+        }
     }
 
     pub fn recognize(img: image::DynamicImage, lang_arg: &str, psm: u32) -> Result<String> {

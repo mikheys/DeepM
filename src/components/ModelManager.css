@@ -191,6 +191,8 @@
   border-radius: var(--radius-md);
   color: var(--color-danger);
   font-size: 13px;
+  user-select: text;
+  cursor: text;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -224,6 +226,14 @@
   font-family: var(--font-mono);
   max-height: 120px;
   overflow-y: auto;
+  user-select: text;
+  cursor: text;
+}
+
+.engine-error-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .engine-retry-btn {

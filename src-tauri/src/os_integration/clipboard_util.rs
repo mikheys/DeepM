@@ -125,61 +125,27 @@ pub fn copy_selection_to_clipboard() -> Result<String> {
     Ok(selected)
 }
 
-/// Returns the currently selected text, or None if nothing is selected. Gates
-/// the floating button, so it must NEVER disturb a non-text foreground app.
-///
-/// Two non-destructive-where-it-matters layers:
-/// 1. UI Automation query of the focused element (no keystroke) — covers most
-///    native + Chromium apps.
-/// 2. If UIA finds nothing AND the foreground window has a text caret, fall back
-///    to a clipboard copy (save/restore). The caret guard is what keeps canvas
-///    apps safe: Photoshop's canvas has no caret, so the Ctrl+C never fires
-///    there, while real edit fields (Explorer rename, etc.) do have one.
-/// `text_cursor` = the pointer was an I-beam when the selection gesture ended
-/// (captured by the hook). Together with a Win32 caret it tells us the context
-/// is text, so the clipboard fallback is safe; on a canvas (brush cursor, no
-/// caret) it stays false and no keystroke is sent.
-pub fn get_selected_text(text_cursor: bool) -> Option<String> {
-    if let Some(text) = super::uia::selection_via_uia() {
-        return Some(text);
-    }
-    #[cfg(target_os = "windows")]
-    if text_cursor || foreground_has_caret() {
-        return copy_selection_nondestructive();
-    }
-    let _ = text_cursor;
-    None
+/// Selected text via UI Automation ONLY — never touches the clipboard. This
+/// gates the *proactive* showing of the floating button, so merely selecting
+/// text can never clobber the user's clipboard (the old Ctrl+C probe raced with
+/// the user's own Ctrl+C and pasted stale content). Apps without UIA text just
+/// won't auto-show the button — but the button still appears over an I-beam and
+/// captures on click (see `capture_selection`).
+pub fn get_selected_text() -> Option<String> {
+    super::uia::selection_via_uia()
 }
 
-/// True if the foreground GUI thread currently shows a text caret — i.e. focus
-/// is in an editable text field. (Win32 carets only; Chromium draws its own, so
-/// Electron text fields rely on the UIA layer above.)
-#[cfg(target_os = "windows")]
-fn foreground_has_caret() -> bool {
-    use std::ffi::c_void;
-    #[repr(C)]
-    struct Rect { left: i32, top: i32, right: i32, bottom: i32 }
-    #[repr(C)]
-    struct GuiThreadInfo {
-        cb_size: u32,
-        flags: u32,
-        hwnd_active: *mut c_void,
-        hwnd_focus: *mut c_void,
-        hwnd_capture: *mut c_void,
-        hwnd_menu_owner: *mut c_void,
-        hwnd_move_size: *mut c_void,
-        hwnd_caret: *mut c_void,
-        rc_caret: Rect,
+/// Captures the selection only when the user EXPLICITLY clicks the floating
+/// button (a deliberate action, so no race with their own Ctrl+C): UIA first,
+/// else a Ctrl+C copy with full clipboard save/restore.
+pub fn capture_selection() -> Option<String> {
+    if let Some(t) = super::uia::selection_via_uia() {
+        return Some(t);
     }
-    #[link(name = "user32")]
-    extern "system" {
-        fn GetGUIThreadInfo(id_thread: u32, pgui: *mut GuiThreadInfo) -> i32;
-    }
-    unsafe {
-        let mut gti: GuiThreadInfo = std::mem::zeroed();
-        gti.cb_size = std::mem::size_of::<GuiThreadInfo>() as u32;
-        GetGUIThreadInfo(0, &mut gti) != 0 && !gti.hwnd_caret.is_null()
-    }
+    #[cfg(target_os = "windows")]
+    { copy_selection_nondestructive() }
+    #[cfg(not(target_os = "windows"))]
+    { None }
 }
 
 /// Clipboard-copy fallback (Ctrl+C with save/restore). Only called from

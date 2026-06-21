@@ -59,6 +59,8 @@ export type Strings = {
   restart_engine: string;
   restarting: string;
   engine_error: string;
+  copy_error: string;
+  report_problem: string;
   retry: string;
   starting: string;
   downloading: string;
@@ -93,6 +95,8 @@ export type Strings = {
   settings_translation: string;
   settings_default_source: string;
   settings_default_target: string;
+  settings_auto_priority: string;
+  settings_auto_priority_hint: string;
   settings_gpu: string;
   settings_gpu_hint: string;
   settings_gpu_unavailable: string;
@@ -103,6 +107,8 @@ export type Strings = {
   settings_translation_term: string;
   settings_add: string;
   settings_hotkeys: string;
+  settings_global_hotkeys: string;
+  settings_global_hotkeys_hint: string;
   settings_triple_copy: string;
   settings_translate_replace: string;
   settings_triple_interval: string;
@@ -252,6 +258,8 @@ const en: Strings = {
   restart_engine: "Restart engine",
   restarting: "Restarting…",
   engine_error: "Engine error",
+  copy_error: "Copy error",
+  report_problem: "Report a problem",
   retry: "Retry",
   starting: "Starting…",
   downloading: "Downloading",
@@ -284,6 +292,8 @@ const en: Strings = {
   settings_translation: "Translation",
   settings_default_source: "Default source language",
   settings_default_target: "Default target language",
+  settings_auto_priority: "Priority language (auto mode)",
+  settings_auto_priority_hint: "In auto mode, foreign text is translated into this language.",
   settings_gpu: "GPU acceleration",
   settings_gpu_hint: "Use CUDA if available",
   settings_gpu_unavailable: "NVIDIA GPU found — install the CUDA pack to enable",
@@ -294,6 +304,8 @@ const en: Strings = {
   settings_translation_term: "Translation",
   settings_add: "Add",
   settings_hotkeys: "Hotkeys",
+  settings_global_hotkeys: "Global hotkeys & selection",
+  settings_global_hotkeys_hint: "System-wide copy/translate hotkeys and the selection button. Turn off if it interferes with other apps. Restart to apply.",
   settings_triple_copy: "Triple-copy trigger",
   settings_translate_replace: "Translate & replace",
   settings_triple_interval: "Multi-copy interval (ms)",
@@ -437,6 +449,8 @@ const ru: Strings = {
   restart_engine: "Перезапустить движок",
   restarting: "Перезапуск…",
   engine_error: "Ошибка движка",
+  copy_error: "Скопировать ошибку",
+  report_problem: "Сообщить о проблеме",
   retry: "Повторить",
   starting: "Запуск…",
   downloading: "Скачивание",
@@ -469,6 +483,8 @@ const ru: Strings = {
   settings_translation: "Перевод",
   settings_default_source: "Язык источника по умолчанию",
   settings_default_target: "Язык перевода по умолчанию",
+  settings_auto_priority: "Приоритетный язык (авторежим)",
+  settings_auto_priority_hint: "В авторежиме иностранный текст переводится на этот язык.",
   settings_gpu: "Ускорение GPU",
   settings_gpu_hint: "Использовать CUDA при наличии",
   settings_gpu_unavailable: "Видеокарта NVIDIA найдена — установите CUDA-пакет для активации",
@@ -479,6 +495,8 @@ const ru: Strings = {
   settings_translation_term: "Перевод",
   settings_add: "Добавить",
   settings_hotkeys: "Горячие клавиши",
+  settings_global_hotkeys: "Глобальные хоткеи и выделение",
+  settings_global_hotkeys_hint: "Системные хоткеи копирования/перевода и кнопка выделения. Отключите, если мешает другим приложениям. Применяется после перезапуска.",
   settings_triple_copy: "Тройной Ctrl+C",
   settings_translate_replace: "Перевод и замена",
   settings_triple_interval: "Интервал нажатий (мс)",

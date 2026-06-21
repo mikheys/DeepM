@@ -16,8 +16,11 @@
   width: 100%;
 }
 
-.about-logo {
-  border-radius: 18px;
+.about-update .btn-primary,
+.about-update .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .about-name {

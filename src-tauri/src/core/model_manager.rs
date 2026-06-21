@@ -209,65 +209,111 @@ impl ModelManager {
 
         log::info!("Downloading {url} -> {}", dest.display());
 
-        let existing_bytes = if dest.exists() {
-            tokio::fs::metadata(&dest).await?.len()
-        } else {
-            0
-        };
-
-        let mut req = client.get(&url).header("User-Agent", "DeepM");
-        if existing_bytes > 0 {
-            req = req.header("Range", format!("bytes={}-", existing_bytes));
-        }
-
-        let response = req.send().await?;
-
-        let total_size = response
-            .headers()
-            .get("content-length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0)
-            + existing_bytes;
-
-        let status_code = response.status();
-        if !status_code.is_success() && status_code.as_u16() != 206 {
-            return Err(anyhow!("HTTP error {status_code} downloading model"));
-        }
-
         use tokio::io::AsyncWriteExt;
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(existing_bytes > 0)
-            .write(true)
-            .open(&dest)
-            .await?;
 
-        let mut downloaded = existing_bytes;
-        let mut stream = response.bytes_stream();
+        // Networks in some regions drop the HF/TLS stream mid-transfer, which
+        // reqwest surfaces as "error decoding response body". Because the
+        // server supports Range requests we just resume from the bytes already
+        // on disk and retry, instead of failing the whole download.
+        const MAX_RETRIES: u32 = 8;
         let start = std::time::Instant::now();
+        let mut attempt: u32 = 0;
 
-        while let Some(chunk) = stream.next().await {
-            if *self.cancel_flag.lock().await {
-                return Err(anyhow!("Download cancelled"));
+        loop {
+            let downloaded = if dest.exists() {
+                tokio::fs::metadata(&dest).await?.len()
+            } else {
+                0
+            };
+
+            let mut req = client.get(&url).header("User-Agent", "DeepM");
+            if downloaded > 0 {
+                req = req.header("Range", format!("bytes={}-", downloaded));
             }
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
 
-            if total_size > 0 {
-                let progress = (downloaded as f64 / total_size as f64) * 100.0;
-                let elapsed = start.elapsed().as_secs_f64();
-                let speed_mbps = if elapsed > 0.0 {
-                    (downloaded - existing_bytes) as f64 / elapsed / 1_000_000.0
-                } else {
-                    0.0
+            let response = match req.send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                        return Err(anyhow!("Network error after {MAX_RETRIES} retries: {e}"));
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            let status_code = response.status();
+            if !status_code.is_success() && status_code.as_u16() != 206 {
+                // A 416 means we already have the whole file.
+                if status_code.as_u16() == 416 && downloaded > 0 {
+                    return Ok(dest);
+                }
+                return Err(anyhow!("HTTP error {status_code} downloading model"));
+            }
+
+            let total_size = response
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0)
+                + downloaded;
+
+            let mut file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(downloaded > 0)
+                .write(true)
+                .open(&dest)
+                .await?;
+
+            let mut have = downloaded;
+            let mut stream = response.bytes_stream();
+            let mut stream_err = false;
+
+            while let Some(chunk) = stream.next().await {
+                if *self.cancel_flag.lock().await {
+                    return Err(anyhow!("Download cancelled"));
+                }
+                let chunk = match chunk {
+                    Ok(c) => c,
+                    Err(_) => {
+                        // Transient: flush what we have and resume below.
+                        stream_err = true;
+                        break;
+                    }
                 };
-                progress_cb(progress, speed_mbps);
+                file.write_all(&chunk).await?;
+                have += chunk.len() as u64;
+
+                if total_size > 0 {
+                    let progress = (have as f64 / total_size as f64) * 100.0;
+                    let elapsed = start.elapsed().as_secs_f64();
+                    let speed_mbps = if elapsed > 0.0 {
+                        have as f64 / elapsed / 1_000_000.0
+                    } else {
+                        0.0
+                    };
+                    progress_cb(progress, speed_mbps);
+                }
             }
+
+            file.flush().await?;
+
+            if stream_err && (total_size == 0 || have < total_size) {
+                attempt += 1;
+                if attempt > MAX_RETRIES {
+                    return Err(anyhow!(
+                        "Download interrupted after {MAX_RETRIES} retries (resumed {have} bytes)"
+                    ));
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+
+            break;
         }
 
-        file.flush().await?;
         Ok(dest)
     }
 }

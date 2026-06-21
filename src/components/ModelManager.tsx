@@ -17,6 +17,8 @@ import {
   onModelError,
   onModelDownloaded,
   onDownloadCancelled,
+  logEvent,
+  openLogFolder,
 } from "../api";
 import { useI18n } from "../i18n-context";
 import "./ModelManager.css";
@@ -136,6 +138,11 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
     ];
     return () => { subs.forEach((p) => p.then((f) => f())); };
   }, [refreshStatus, refreshDownloaded, onReady]);
+
+  // Every engine error is written to the log file so it can be copied / attached.
+  useEffect(() => {
+    if (engineError) logEvent("ERROR", "engine", engineError);
+  }, [engineError]);
 
   const isDownloadingAny = downloadingKey !== null;
   const anyBusy = isDownloadingAny || busyKey !== null || engineBusy;
@@ -266,6 +273,15 @@ export default function ModelManager({ onModelReady: onReady, isOnboarding }: Pr
         <div className="engine-error-card">
           <div className="engine-error-title">⚠ {t.engine_error}</div>
           <div className="engine-error-detail">{engineError}</div>
+          <div className="engine-error-actions">
+            <button className="btn-secondary"
+              onClick={() => navigator.clipboard.writeText(engineError).catch(() => {})}>
+              {t.copy_error}
+            </button>
+            <button className="btn-secondary" onClick={() => openLogFolder().catch(() => {})}>
+              {t.report_problem}
+            </button>
+          </div>
         </div>
       )}
 

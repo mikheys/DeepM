@@ -110,6 +110,17 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             </select>
           </div>
           <div className="settings-row">
+            <label>{t.settings_auto_priority}</label>
+            <select
+              value={settings.auto_target_priority ?? "ru"}
+              onChange={(e) => update("auto_target_priority", e.target.value)}
+            >
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+            </select>
+            <span className="settings-hint">{t.settings_auto_priority_hint}</span>
+          </div>
+          <div className="settings-row">
             <label>{t.settings_gpu}</label>
             <input
               type="checkbox"
@@ -174,6 +185,16 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
 
         <section className="settings-section">
           <h2 className="settings-section-title">{t.settings_hotkeys}</h2>
+
+          <div className="settings-row">
+            <label>{t.settings_global_hotkeys}</label>
+            <input
+              type="checkbox"
+              checked={settings.global_hotkeys ?? true}
+              onChange={(e) => update("global_hotkeys", e.target.checked)}
+            />
+            <span className="settings-hint">{t.settings_global_hotkeys_hint}</span>
+          </div>
 
           <div className="settings-row">
             <label>{t.settings_translate_replace}</label>

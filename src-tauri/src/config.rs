@@ -54,6 +54,17 @@ pub struct AppSettings {
     /// Auto-detect the image script (OSD) and add/download the matching language.
     #[serde(default = "default_true")]
     pub ocr_auto_lang: bool,
+    /// Preferred language to translate INTO when both source and target are
+    /// "auto" (e.g. "ru"). Any foreign source is translated into this language;
+    /// text already in this language is translated into the secondary one.
+    #[serde(default = "default_auto_target_priority")]
+    pub auto_target_priority: String,
+    /// Master switch for the global keyboard/mouse hook (triple-copy,
+    /// translate-replace chord, selection floating button). When off, the app
+    /// works as a normal window with no system-wide input monitoring. Takes
+    /// effect on restart.
+    #[serde(default = "default_true")]
+    pub global_hotkeys: bool,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -84,6 +95,10 @@ fn default_locale() -> String {
     "en".to_string()
 }
 
+fn default_auto_target_priority() -> String {
+    "ru".to_string()
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         let model_path = default_model_path();
@@ -105,6 +120,8 @@ impl Default for AppSettings {
             floating_exclusions: Vec::new(),
             ocr_languages: vec!["rus".to_string(), "eng".to_string()],
             ocr_auto_lang: true,
+            auto_target_priority: "ru".to_string(),
+            global_hotkeys: true,
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

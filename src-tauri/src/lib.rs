@@ -7,6 +7,7 @@ use std::sync::Mutex as StdMutex;
 
 mod config;
 mod core;
+mod logging;
 mod os_integration;
 mod shortcuts;
 
@@ -42,7 +43,16 @@ pub(crate) struct AppState {
 
 #[tauri::command]
 async fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
-    Ok(state.model_manager.get_status().await)
+    let status = state.model_manager.get_status().await;
+    // The stored status can be stale (it's only updated on load/error). If it
+    // claims Ready, confirm the engine process is actually answering so the UI
+    // status dot reflects the live engine, not the last-known state.
+    if matches!(status, ModelStatus::Ready { .. }) && !state.engine.is_running().await {
+        return Ok(ModelStatus::Error {
+            message: "Engine not responding".to_string(),
+        });
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -110,6 +120,7 @@ async fn start_model_download(
                         }
                         Err(e) => {
                             log::error!("Engine start failed: {e}");
+                            logging::error("engine", &e.to_string());
                             let _ = app.emit("model_error", e.to_string());
                             os_integration::tray::update_tray_model_status(&app, "engine error");
                         }
@@ -122,6 +133,7 @@ async fn start_model_download(
                     let _ = app.emit("download_cancelled", ());
                 } else {
                     log::error!("Download failed: {e}");
+                    logging::error("download", &e.to_string());
                     let _ = app.emit("model_error", e.to_string());
                 }
             }
@@ -250,6 +262,19 @@ fn detect_language_internal(text: &str) -> String {
         "ru".to_string()
     } else {
         "en".to_string()
+    }
+}
+
+/// Chooses the target language for "auto" mode given the detected source and
+/// the user's preferred (priority) language. Foreign text goes INTO the
+/// priority language; text already in the priority language goes into the
+/// secondary one. Default priority "ru" → zh/en/… → ru, ru → en.
+fn auto_target(src: &str, priority: &str) -> String {
+    let secondary = if priority == "ru" { "en" } else { "ru" };
+    if src == priority {
+        secondary.to_string()
+    } else {
+        priority.to_string()
     }
 }
 
@@ -401,14 +426,22 @@ async fn translate_and_replace(
             .collect()
     };
 
+    let resolved_source = if source_lang == "auto" {
+        detect_language_internal(&source_text)
+    } else {
+        source_lang.clone()
+    };
+    let resolved_target = if target_lang == "auto" {
+        let priority = state.settings.lock().await.auto_target_priority.clone();
+        auto_target(&resolved_source, &priority)
+    } else {
+        target_lang.clone()
+    };
+
     let req = TranslationRequest {
         source_text: source_text.clone(),
-        source_lang: if source_lang == "auto" {
-            detect_language_internal(&source_text)
-        } else {
-            source_lang.clone()
-        },
-        target_lang: target_lang.clone(),
+        source_lang: resolved_source,
+        target_lang: resolved_target,
         context: None,
         glossary,
         version: active_model_version(&state).await,
@@ -473,8 +506,8 @@ async fn quick_translate(
 /// translating, so the selection-wiping copy never happens on mere selection.
 #[tauri::command]
 async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    // Explicit user action (button click) — allow the clipboard fallback.
-    let text = tokio::task::spawn_blocking(|| os_integration::get_selected_text(true))
+    // Explicit user action (button click) — allow the Ctrl+C capture fallback.
+    let text = tokio::task::spawn_blocking(os_integration::capture_selection)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -488,7 +521,8 @@ async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::V
     };
 
     let src = detect_language_internal(&text);
-    let tgt = if src == "ru" { "en".to_string() } else { "ru".to_string() };
+    let priority = state.settings.lock().await.auto_target_priority.clone();
+    let tgt = auto_target(&src, &priority);
 
     let req = TranslationRequest {
         source_text: text.clone(),
@@ -790,6 +824,39 @@ async fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Records an error/info line from the frontend into the shared log file.
+#[tauri::command]
+fn log_event(level: String, source: String, message: String) {
+    logging::log(&level, &source, &message);
+}
+
+/// Returns the tail of the log file for the "Report a problem" view.
+#[tauri::command]
+fn read_log() -> String {
+    logging::tail(64 * 1024)
+}
+
+/// Opens the folder containing the log file in the system file manager.
+#[tauri::command]
+async fn open_log_folder() -> Result<(), String> {
+    let dir = logging::log_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = dir;
+    }
+    Ok(())
+}
+
 /// Lists executable names of apps with a visible window, for the exclusion picker.
 #[tauri::command]
 async fn list_app_processes() -> Result<Vec<String>, String> {
@@ -1011,6 +1078,7 @@ pub fn run() {
     let model_quant = settings.quantization.clone();
     let show_floating = settings.show_floating_button;
     let start_in_tray = settings.start_in_tray;
+    let global_hotkeys = settings.global_hotkeys;
     let shortcut_cfg = ShortcutConfig::from_settings(&settings);
 
     let history_path = dirs::data_local_dir()
@@ -1071,6 +1139,8 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            logging::info("app", &format!("DeepM {} started", env!("CARGO_PKG_VERSION")));
+
             // Tell the OCR layer where bundled Tesseract / RapidOCR models live.
             #[cfg(target_os = "windows")]
             os_integration::ocr::set_resource_dir(
@@ -1082,9 +1152,14 @@ pub fn run() {
                 log::warn!("Tray setup failed: {e}");
             }
 
-            // Floating button window
-            if let Err(e) = os_integration::create_floating_window(&handle) {
-                log::warn!("Floating window creation failed: {e}");
+            // Floating button window — created only when the floating button is
+            // enabled. (Gated separately from the hook so each can be isolated:
+            // a transparent always-on-top layered window is itself a known cause
+            // of GDI caret artifacts in classic apps like Notepad.)
+            if show_floating {
+                if let Err(e) = os_integration::create_floating_window(&handle) {
+                    log::warn!("Floating window creation failed: {e}");
+                }
             }
 
             // Intercept main window close: hide to tray instead of destroying.
@@ -1158,8 +1233,15 @@ pub fn run() {
                 });
             }
 
-            // Spawn global keyboard/mouse hook (reads live config)
-            os_integration::spawn_hook(handle.clone(), Arc::clone(&hook_config));
+            // Spawn global keyboard/mouse hook (reads live config). Skipped when
+            // the user disables global hotkeys — this also lets us isolate the
+            // hook as the cause of input-side side effects (e.g. caret artifacts
+            // in some GDI apps), since with it off no system-wide hook exists.
+            if global_hotkeys {
+                os_integration::spawn_hook(handle.clone(), Arc::clone(&hook_config));
+            } else {
+                logging::info("hook", "global hotkeys disabled by settings — hook not installed");
+            }
 
             // Listen for hook events and dispatch to commands
             {
@@ -1290,26 +1372,35 @@ pub fn run() {
                             return;
                         }
 
-                        // Capture the selection now. This doubles as verification: if
-                        // Ctrl+C yields no text, the "drag" wasn't a text selection
-                        // (e.g. moving a window or dragging on empty space), so the
-                        // button must NOT appear. Apps where Ctrl+C is disruptive
-                        // (terminals) can be added to the exclusion list.
-                        let captured = tokio::task::spawn_blocking(
-                            move || os_integration::get_selected_text(text_cursor)
-                        ).await;
-                        let text = match captured {
-                            Ok(Some(t)) if !t.trim().is_empty() => t,
-                            _ => return, // nothing selected — don't show the button
+                        // Verify there's a real text selection — WITHOUT touching the
+                        // clipboard (UIA only). If UIA has nothing but the gesture was
+                        // over text (I-beam cursor), show the button anyway and let the
+                        // click capture the text via Ctrl+C — so merely selecting never
+                        // clobbers the user's clipboard.
+                        let uia = tokio::task::spawn_blocking(os_integration::get_selected_text)
+                            .await
+                            .ok()
+                            .flatten();
+                        let (text, capture) = match uia {
+                            Some(t) if !t.trim().is_empty() => (t, false),
+                            _ if text_cursor => (String::new(), true),
+                            _ => return, // not a text selection — don't show the button
                         };
                         if gen_arc.load(Ordering::SeqCst) != my_gen {
                             return;
                         }
 
-                        // Detect language + target direction here so the button can
-                        // translate instantly on click without copying again.
-                        let src = detect_language_internal(&text);
-                        let tgt = if src == "ru" { "en" } else { "ru" };
+                        // Detect language + direction when we already have the text;
+                        // otherwise defaults (the click path returns the real langs).
+                        let (src, tgt) = if capture {
+                            ("auto".to_string(), "auto".to_string())
+                        } else {
+                            let s = detect_language_internal(&text);
+                            let priority = h.state::<AppState>().settings.lock().await
+                                .auto_target_priority.clone();
+                            let t = auto_target(&s, &priority);
+                            (s, t)
+                        };
 
                         // Remember the source app so the "Replace" button can
                         // paste the translation back into it.
@@ -1323,6 +1414,7 @@ pub fn run() {
                             "text": text,
                             "source_lang": src,
                             "target_lang": tgt,
+                            "capture": capture,
                         }));
                     });
                 });
@@ -1370,6 +1462,9 @@ pub fn run() {
             ocr_lang_remove,
             launch_snip,
             open_url,
+            log_event,
+            read_log,
+            open_log_folder,
             set_autostart,
             get_autostart,
             restart_engine,

@@ -8,8 +8,8 @@ pub mod uia;
 
 // Re-export the high-level interfaces so lib.rs only imports from here.
 pub use clipboard_util::{
-    copy_selection_to_clipboard, get_selected_text, paste_from_clipboard, read_clipboard,
-    restore_clipboard, save_clipboard, snapshot_clipboard, write_clipboard,
+    capture_selection, copy_selection_to_clipboard, get_selected_text, paste_from_clipboard,
+    read_clipboard, restore_clipboard, save_clipboard, snapshot_clipboard, write_clipboard,
 };
 pub use floating::{
     create_floating_window, hide_floating, is_floating_visible, set_floating_expanded,

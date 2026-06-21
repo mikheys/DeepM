@@ -58,6 +58,7 @@ function MainApp() {
   const [translateReplaceActive, setTranslateReplaceActive] = useState(false);
   const [defaultTargetLang, setDefaultTargetLang] = useState("auto");
   const [defaultSourceLang, setDefaultSourceLang] = useState("auto");
+  const [autoTargetPriority, setAutoTargetPriority] = useState("ru");
 
   // Sidebar: compact by default, persisted in localStorage
   const [sidebarExpanded, setSidebarExpanded] = useState(
@@ -71,48 +72,56 @@ function MainApp() {
     });
   }, []);
 
-  // Model status: poll for first 60s as fallback if model_ready event is missed
+  // Poll the real engine status forever so the status dot always reflects
+  // the actual state — fast at startup, then a steady heartbeat so the dot
+  // turns red if the engine dies and green again if it recovers.
   useEffect(() => {
     let cancelled = false;
-    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    let started = false;
 
     const check = () => {
       if (cancelled) return;
       getModelStatus()
         .then((s) => {
-          if (s.type === "ready") {
-            setModelReady(true);
-          } else if (attempts < 12) {
-            attempts++;
-            setTimeout(check, 5000);
-          }
+          if (cancelled) return;
+          setModelReady(s.type === "ready");
         })
         .catch(() => {
-          if (attempts < 12) {
-            attempts++;
-            setTimeout(check, 5000);
-          }
+          if (!cancelled) setModelReady(false);
+        })
+        .finally(() => {
+          if (cancelled) return;
+          // Probe every 4s for the first minute, then every 15s.
+          const delay = started ? 15000 : 4000;
+          started = true;
+          timer = setTimeout(check, delay);
         });
     };
 
     check();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
-  // model_ready listener — stable (no [view] dependency so it's never torn down)
+  // Engine lifecycle events flip the dot immediately, without waiting for a poll.
   useEffect(() => {
-    const unsub = listen("model_ready", () => setModelReady(true));
-    return () => { unsub.then((f) => f()); };
+    const subs = [
+      listen("model_ready", () => setModelReady(true)),
+      listen("model_error", () => setModelReady(false)),
+    ];
+    return () => { subs.forEach((p) => p.then((f) => f())); };
   }, []);
 
-  // Settings load
+  // Settings load — re-read on navigation so edits in the Settings panel
+  // (glossary, default langs, auto-target priority) take effect immediately.
   useEffect(() => {
     getSettings().then((s) => {
       setGlossary(s.glossary);
       setDefaultTargetLang(s.default_target_lang);
       setDefaultSourceLang(s.default_source_lang);
+      setAutoTargetPriority(s.auto_target_priority ?? "ru");
     }).catch(() => {});
-  }, []);
+  }, [view]);
 
   // Other event listeners
   useEffect(() => {
@@ -138,6 +147,18 @@ function MainApp() {
     });
     return () => { sub.then((f) => f()); };
   }, [modelReady, defaultSourceLang, defaultTargetLang]);
+
+  // Esc returns to the translator from any secondary view (history, model
+  // manager, settings, about, ocr test). Onboarding is left alone — there's
+  // nowhere to go back to until a model is ready.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setView((cur) => (cur === "onboarding" || cur === "translator" ? cur : "translator"));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleModelReady = () => { setModelReady(true); setView("translator"); };
   const handleHistorySelect = (entry: TranslationHistoryEntry) => {
@@ -205,6 +226,7 @@ function MainApp() {
             onInitialTextConsumed={handleInjectedConsumed}
             defaultSourceLang={defaultSourceLang}
             defaultTargetLang={defaultTargetLang}
+            autoTargetPriority={autoTargetPriority}
             onTranslated={(sl, tl, st, tt) => {
               if (historyEntry) setHistoryEntry(null);
             }}

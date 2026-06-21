@@ -10,6 +10,8 @@ type FloatingShow = {
   text: string;
   source_lang: string;
   target_lang: string;
+  /** No text was pre-captured (non-UIA app) — capture on click via Ctrl+C. */
+  capture?: boolean;
 };
 
 export default function FloatingButton() {
@@ -25,6 +27,8 @@ export default function FloatingButton() {
   const pendingTextRef = useRef("");
   const pendingSrcRef = useRef("auto");
   const pendingTgtRef = useRef("ru");
+  // True when text wasn't pre-captured — grab it via Ctrl+C on click instead.
+  const pendingCaptureRef = useRef(false);
 
   // Force the document background fully transparent (overrides global.css).
   useEffect(() => {
@@ -53,14 +57,26 @@ export default function FloatingButton() {
   // the button appeared, so clicking translates instantly without copying again.
   const runTranslate = async () => {
     const txt = pendingTextRef.current;
-    if (!txt.trim()) { doHide(); return; }
+    if (!txt.trim() && !pendingCaptureRef.current) { doHide(); return; }
     setUiState("loading");
     try {
-      const result = await invoke<string>("quick_translate", {
-        sourceText: txt,
-        sourceLang: pendingSrcRef.current,
-        targetLang: pendingTgtRef.current,
-      });
+      let result: string;
+      if (txt.trim()) {
+        // Text was pre-captured (UIA) — translate it directly.
+        result = await invoke<string>("quick_translate", {
+          sourceText: txt,
+          sourceLang: pendingSrcRef.current,
+          targetLang: pendingTgtRef.current,
+        });
+      } else {
+        // No pre-captured text (non-UIA app) — capture via Ctrl+C now (the
+        // click is deliberate, so it won't race with the user's own Ctrl+C).
+        const r = await invoke<{ translated_text: string; source_lang: string; target_lang: string }>(
+          "translate_selection"
+        );
+        result = r.translated_text;
+        setLangLabel(`${r.source_lang.toUpperCase()} → ${r.target_lang.toUpperCase()}`);
+      }
       setTranslation(result);
       setUiState("result");
       setExpanded(true);
@@ -83,8 +99,11 @@ export default function FloatingButton() {
       pendingTextRef.current = p.text ?? "";
       pendingSrcRef.current = p.source_lang ?? "auto";
       pendingTgtRef.current = p.target_lang ?? "ru";
+      pendingCaptureRef.current = !!p.capture;
       setTranslation("");
-      setLangLabel(`${(p.source_lang ?? "").toUpperCase()} → ${(p.target_lang ?? "").toUpperCase()}`);
+      setLangLabel(
+        p.capture ? "" : `${(p.source_lang ?? "").toUpperCase()} → ${(p.target_lang ?? "").toUpperCase()}`
+      );
       setUiState("idle");
       setExpanded(false);
       setVisible(true);
