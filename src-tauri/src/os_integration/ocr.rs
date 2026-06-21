@@ -395,10 +395,40 @@ mod tesseract {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    /// One recognized text line with its mean word confidence (0..100).
+    /// One recognized text line: its text, mean word confidence (0..100) and
+    /// bounding box in the (preprocessed) image's pixel space.
     struct TsvLine {
         conf: f32,
         text: String,
+        left: u32,
+        top: u32,
+        right: u32,
+        bottom: u32,
+    }
+
+    /// Fraction of a line's letters that are Han ideographs (0.0..1.0). Used to
+    /// tell a Chinese line (≈1.0) from a foreign-language line (≈0.0) without
+    /// any confidence guesswork.
+    fn han_ratio(text: &str) -> f32 {
+        let mut han = 0usize;
+        let mut letters = 0usize;
+        for ch in text.chars() {
+            let is_han = ('\u{4E00}'..='\u{9FFF}').contains(&ch)
+                || ('\u{3400}'..='\u{4DBF}').contains(&ch)
+                || ('\u{F900}'..='\u{FAFF}').contains(&ch);
+            if is_han {
+                han += 1;
+                letters += 1;
+            } else if ch.is_alphabetic() {
+                letters += 1;
+            }
+        }
+        if letters == 0 {
+            // Digits / punctuation only — script-agnostic, treat as "keep".
+            1.0
+        } else {
+            han as f32 / letters as f32
+        }
     }
 
     /// Runs Tesseract with TSV output and groups words into lines, each with a
@@ -419,30 +449,47 @@ mod tesseract {
         Ok(parse_tsv(&String::from_utf8_lossy(&output.stdout)))
     }
 
+    /// Accumulator for the current TSV line being assembled.
+    #[derive(Default)]
+    struct LineAcc {
+        words: Vec<String>,
+        confs: Vec<f32>,
+        left: u32,
+        top: u32,
+        right: u32,
+        bottom: u32,
+        any: bool,
+    }
+
     /// Parses Tesseract TSV (columns: level page block par line word left top
-    /// width height conf text) into per-line text + mean confidence, preserving
-    /// reading order.
+    /// width height conf text) into per-line text, mean confidence and bounding
+    /// box, preserving reading order.
     fn parse_tsv(tsv: &str) -> Vec<TsvLine> {
         let mut lines: Vec<TsvLine> = Vec::new();
         let mut cur_key: Option<(u32, u32, u32)> = None;
-        let mut words: Vec<String> = Vec::new();
-        let mut confs: Vec<f32> = Vec::new();
+        let mut acc = LineAcc::default();
 
-        let flush = |lines: &mut Vec<TsvLine>, words: &mut Vec<String>, confs: &mut Vec<f32>| {
-            if !words.is_empty() {
-                let text = words.join(" ");
-                let conf = if confs.is_empty() {
-                    0.0
-                } else {
-                    confs.iter().sum::<f32>() / confs.len() as f32
-                };
+        fn flush(lines: &mut Vec<TsvLine>, acc: &mut LineAcc) {
+            if acc.any && !acc.words.is_empty() {
+                let text = acc.words.join(" ");
                 if !text.trim().is_empty() {
-                    lines.push(TsvLine { conf, text });
+                    let conf = if acc.confs.is_empty() {
+                        0.0
+                    } else {
+                        acc.confs.iter().sum::<f32>() / acc.confs.len() as f32
+                    };
+                    lines.push(TsvLine {
+                        conf,
+                        text,
+                        left: acc.left,
+                        top: acc.top,
+                        right: acc.right,
+                        bottom: acc.bottom,
+                    });
                 }
             }
-            words.clear();
-            confs.clear();
-        };
+            *acc = LineAcc::default();
+        }
 
         for (i, row) in tsv.lines().enumerate() {
             if i == 0 {
@@ -454,7 +501,7 @@ mod tesseract {
             }
             let level: u32 = c[0].parse().unwrap_or(0);
             if level != 5 {
-                continue; // only word rows carry text + confidence
+                continue; // only word rows carry text + confidence + bbox
             }
             let key = (
                 c[2].parse().unwrap_or(0),
@@ -462,26 +509,48 @@ mod tesseract {
                 c[4].parse().unwrap_or(0),
             );
             if cur_key != Some(key) {
-                flush(&mut lines, &mut words, &mut confs);
+                flush(&mut lines, &mut acc);
                 cur_key = Some(key);
             }
-            let conf: f32 = c[10].parse().unwrap_or(-1.0);
             let word = c[11].trim();
-            if !word.is_empty() {
-                words.push(word.to_string());
-                if conf >= 0.0 {
-                    confs.push(conf);
-                }
+            if word.is_empty() {
+                continue;
+            }
+            let conf: f32 = c[10].parse().unwrap_or(-1.0);
+            let (l, t, w, h): (u32, u32, u32, u32) = (
+                c[6].parse().unwrap_or(0),
+                c[7].parse().unwrap_or(0),
+                c[8].parse().unwrap_or(0),
+                c[9].parse().unwrap_or(0),
+            );
+            if !acc.any {
+                acc.left = l;
+                acc.top = t;
+                acc.right = l + w;
+                acc.bottom = t + h;
+                acc.any = true;
+            } else {
+                acc.left = acc.left.min(l);
+                acc.top = acc.top.min(t);
+                acc.right = acc.right.max(l + w);
+                acc.bottom = acc.bottom.max(t + h);
+            }
+            acc.words.push(word.to_string());
+            if conf >= 0.0 {
+                acc.confs.push(conf);
             }
         }
-        flush(&mut lines, &mut words, &mut confs);
+        flush(&mut lines, &mut acc);
         lines
     }
 
-    /// Two-pass merge: OCR with `primary` and `secondary`, then keep the more
-    /// confident pass per line. Falls back to a plain `primary` pass if the two
-    /// passes don't segment into the same number of lines (so we never emit a
-    /// scrambled interleaving).
+    /// Region-based merge for a page whose dominant script is `primary` (e.g.
+    /// Chinese) but which has some `secondary` (Latin/Cyrillic) lines like a
+    /// title. We segment ONCE with the primary engine (reliable layout for the
+    /// dominant script), then re-OCR only the lines that came out as mostly
+    /// non-Han — cropping each such line and recognizing it with `secondary`.
+    /// This avoids the fragile cross-engine line matching of a naive two-pass
+    /// merge while keeping the Chinese body untouched.
     pub fn recognize_merged(
         img: image::DynamicImage,
         primary: &str,
@@ -494,48 +563,61 @@ mod tesseract {
 
         let tmp = std::env::temp_dir().join(format!("deepm_ocr_m_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
-
-        let a = run_tsv(&exe, &dir, &tmp, primary, psm);
-        let b = run_tsv(&exe, &dir, &tmp, secondary, psm);
+        let lines = run_tsv(&exe, &dir, &tmp, primary, psm);
         let _ = std::fs::remove_file(&tmp);
 
-        let (a, b) = match (a, b) {
-            (Ok(a), Ok(b)) => (a, b),
+        let lines = match lines {
+            Ok(l) if !l.is_empty() => l,
             _ => {
-                super::dbg_log("OCR merge: a TSV pass failed, falling back to primary");
+                super::dbg_log("OCR merge: primary TSV empty/failed → plain primary pass");
                 return recognize(img, primary, psm);
             }
         };
 
-        if !a.is_empty() && a.len() == b.len() {
-            // Bias toward the primary (detected) script: only take the secondary
-            // line when it's clearly more confident.
-            const MARGIN: f32 = 5.0;
-            let mut out = String::new();
-            let mut took_secondary = 0;
-            for (la, lb) in a.iter().zip(b.iter()) {
-                let pick = if lb.conf > la.conf + MARGIN {
-                    took_secondary += 1;
-                    &lb.text
-                } else {
-                    &la.text
-                };
-                out.push_str(pick);
+        // A line is "foreign" (re-OCR with secondary) when fewer than half its
+        // letters are Han ideographs.
+        const HAN_KEEP: f32 = 0.5;
+        let (iw, ih) = (img.width(), img.height());
+        let mut out = String::new();
+        let mut rechecked = 0;
+
+        for ln in &lines {
+            if han_ratio(&ln.text) >= HAN_KEEP {
+                out.push_str(ln.text.trim());
                 out.push('\n');
+                continue;
             }
-            super::dbg_log(&format!(
-                "OCR merge: {} lines, {took_secondary} from secondary ({secondary})",
-                a.len()
-            ));
-            Ok(out.trim_end().to_string())
-        } else {
-            super::dbg_log(&format!(
-                "OCR merge: line count mismatch (primary {}, secondary {}) → primary only",
-                a.len(),
-                b.len()
-            ));
-            recognize(img, primary, psm)
+            // Crop the line (with a little padding) and recognize it with the
+            // secondary languages as a single text line (psm 7).
+            let pad = 4u32;
+            let x = ln.left.saturating_sub(pad);
+            let y = ln.top.saturating_sub(pad);
+            let w = (ln.right + pad).min(iw).saturating_sub(x);
+            let h = (ln.bottom + pad).min(ih).saturating_sub(y);
+            if w < 4 || h < 4 {
+                out.push_str(ln.text.trim());
+                out.push('\n');
+                continue;
+            }
+            let crop = img.crop_imm(x, y, w, h);
+            match recognize(crop, secondary, 7) {
+                Ok(t) if !t.trim().is_empty() => {
+                    rechecked += 1;
+                    out.push_str(t.trim());
+                    out.push('\n');
+                }
+                _ => {
+                    out.push_str(ln.text.trim());
+                    out.push('\n');
+                }
+            }
         }
+
+        super::dbg_log(&format!(
+            "OCR merge: {} lines, {rechecked} re-OCR'd with secondary ({secondary})",
+            lines.len()
+        ));
+        Ok(out.trim_end().to_string())
     }
 
     trait NoWindow {
