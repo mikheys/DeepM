@@ -48,6 +48,15 @@ env_logger = "0.11"
 whatlang = "0.16"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# UI Automation — reads the selected text without sending synthetic keystrokes
+# (so the floating button never disturbs non-text apps like Photoshop).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.56", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Accessibility",
+] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

@@ -91,38 +91,16 @@ pub fn copy_selection_to_clipboard() -> Result<String> {
     Ok(selected)
 }
 
-/// Like copy_selection_to_clipboard, but returns None when nothing was actually
-/// selected (i.e. Ctrl+C left the clipboard unchanged).  This prevents false
-/// positives where the old clipboard content would trigger the floating button.
+/// Returns the currently selected text, or None if nothing is selected.
+///
+/// Uses UI Automation (a non-destructive query of the focused element), NOT a
+/// synthetic Ctrl+C. This is what gates the floating button, and it must never
+/// disturb the foreground app: the old Ctrl+C approach fired on every mouse drag
+/// and broke non-text apps (e.g. space-drag panning in Photoshop switched tools).
+/// Apps that don't expose a UIA text selection simply won't show the button —
+/// that's the intended "only on real text selection" behaviour.
 pub fn get_selected_text() -> Option<String> {
-    use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-
-    let prev = read_clipboard().ok();
-    let prev_str = prev.as_deref().unwrap_or("").to_string();
-
-    let mut enigo = Enigo::new(&Settings::default()).ok()?;
-
-    prepare_for_synthetic_input(&mut enigo);
-    std::thread::sleep(Duration::from_millis(50));
-    enigo.key(Key::Control, Direction::Press).ok()?;
-    enigo.key(Key::Unicode('c'), Direction::Click).ok()?;
-    enigo.key(Key::Control, Direction::Release).ok()?;
-    std::thread::sleep(Duration::from_millis(150));
-
-    let selected = read_clipboard().ok()?;
-
-    // Always restore original clipboard
-    if !prev_str.is_empty() {
-        let _ = write_clipboard(&prev_str);
-    }
-
-    // Return None if clipboard didn't actually change (nothing was selected)
-    // or if the result is empty/whitespace
-    if selected.trim().is_empty() || selected == prev_str {
-        None
-    } else {
-        Some(selected)
-    }
+    super::uia::selection_via_uia()
 }
 
 /// Simulates Ctrl+V (paste).

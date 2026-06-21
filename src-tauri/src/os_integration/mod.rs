@@ -4,6 +4,7 @@ pub mod hotkeys;
 pub mod ocr;
 pub mod process;
 pub mod tray;
+pub mod uia;
 
 // Re-export the high-level interfaces so lib.rs only imports from here.
 pub use clipboard_util::{
