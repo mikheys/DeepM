@@ -9,6 +9,10 @@ Powered by [Tencent HY‑MT1.5](https://huggingface.co/tencent) via [llama.cpp](
 
 [English](#english) · [Русский](#русский)
 
+<br>
+
+<img src="screenshot.png" alt="DeepM — local RU↔EN translation with sentence linking" width="820">
+
 </div>
 
 ---
