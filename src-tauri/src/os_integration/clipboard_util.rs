@@ -57,6 +57,40 @@ pub fn read_clipboard() -> Result<String> {
     cb.get_text().map_err(|e| anyhow!("clipboard read error: {e}"))
 }
 
+/// A snapshot of the clipboard (text OR image) so it can be restored verbatim
+/// after our copy/paste actions — not just text.
+pub enum ClipboardData {
+    Text(String),
+    Image(arboard::ImageData<'static>),
+    Empty,
+}
+
+/// Snapshot the clipboard before we overwrite it.
+pub fn snapshot_clipboard() -> ClipboardData {
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        if let Ok(t) = cb.get_text() {
+            if !t.is_empty() {
+                return ClipboardData::Text(t);
+            }
+        }
+        if let Ok(img) = cb.get_image() {
+            return ClipboardData::Image(img);
+        }
+    }
+    ClipboardData::Empty
+}
+
+/// Restore a previously taken snapshot.
+pub fn restore_clipboard(data: ClipboardData) {
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        match data {
+            ClipboardData::Text(t) => { let _ = cb.set_text(t); }
+            ClipboardData::Image(img) => { let _ = cb.set_image(img); }
+            ClipboardData::Empty => { let _ = cb.clear(); }
+        }
+    }
+}
+
 /// Simulates Ctrl+C (copy), waits briefly, reads clipboard.
 /// Saves and restores the previous clipboard content so the user's data is not lost.
 /// Returns the newly copied (selected) text.
@@ -155,8 +189,11 @@ fn foreground_has_caret() -> bool {
 fn copy_selection_nondestructive() -> Option<String> {
     use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
-    let prev = read_clipboard().ok();
-    let prev_str = prev.as_deref().unwrap_or("").to_string();
+    let snap = snapshot_clipboard();
+    let prev_str = match &snap {
+        ClipboardData::Text(t) => t.clone(),
+        _ => String::new(),
+    };
 
     let mut enigo = Enigo::new(&Settings::default()).ok()?;
     prepare_for_synthetic_input(&mut enigo);
@@ -166,14 +203,12 @@ fn copy_selection_nondestructive() -> Option<String> {
     enigo.key(Key::Control, Direction::Release).ok()?;
     std::thread::sleep(Duration::from_millis(120));
 
-    let selected = read_clipboard().ok()?;
-    if !prev_str.is_empty() {
-        let _ = write_clipboard(&prev_str);
-    }
-    if selected.trim().is_empty() || selected == prev_str {
-        None
-    } else {
-        Some(selected)
+    let selected = read_clipboard().ok();
+    restore_clipboard(snap); // put back exactly what was there (text or image)
+
+    match selected {
+        Some(s) if !s.trim().is_empty() && s != prev_str => Some(s),
+        _ => None,
     }
 }
 

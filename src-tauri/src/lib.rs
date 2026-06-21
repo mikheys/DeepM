@@ -376,8 +376,8 @@ async fn translate_and_replace(
     // Notify UI that operation started (visual feedback)
     let _ = app.emit("translate_replace_started", ());
 
-    // Run blocking clipboard/enigo work on a blocking thread so we don't block Tokio
-    let saved_clipboard = os_integration::save_clipboard();
+    // Snapshot the clipboard (text or image) so we can restore it afterwards.
+    let saved_clipboard = os_integration::snapshot_clipboard();
 
     let source_text = tokio::task::spawn_blocking(
         os_integration::copy_selection_to_clipboard
@@ -434,11 +434,9 @@ async fn translate_and_replace(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
 
-    // Restore original clipboard after a delay (user didn't ask to copy — they asked to replace)
-    if let Some(original) = saved_clipboard {
-        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
-        let _ = os_integration::write_clipboard(&original);
-    }
+    // Restore the original clipboard after a delay (user asked to replace, not copy).
+    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+    os_integration::restore_clipboard(saved_clipboard);
 
     let _ = app.emit("translate_replace_done", serde_json::json!({ "ok": true }));
     Ok(())
@@ -572,7 +570,7 @@ async fn hide_floating_button(app: AppHandle) -> Result<(), String> {
 /// original clipboard. Called by the floating "Replace" button.
 #[tauri::command]
 async fn floating_replace(text: String) -> Result<(), String> {
-    let saved = os_integration::save_clipboard();
+    let saved = os_integration::snapshot_clipboard();
     os_integration::write_clipboard(&text).map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(|| {
         // Bring the source app back to the foreground before pasting, so Ctrl+V
@@ -583,10 +581,8 @@ async fn floating_replace(text: String) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
-    if let Some(orig) = saved {
-        tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
-        let _ = os_integration::write_clipboard(&orig);
-    }
+    tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
+    os_integration::restore_clipboard(saved);
     Ok(())
 }
 
