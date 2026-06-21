@@ -667,18 +667,42 @@ async fn ensure_lang(app: &AppHandle, code: &str) -> bool {
     ok
 }
 
-/// Builds the `+`-joined Tesseract `-l` argument: the auto-detected script's
-/// language (downloaded if needed, placed first for priority) plus the user's
-/// configured languages; only installed ones are kept.
+/// Builds the `+`-joined Tesseract `-l` argument.
+///
+/// Key rule: when auto-detection finds a non-Latin/Cyrillic script (Chinese,
+/// Japanese, Korean, Arabic, …), OCR with ONLY that language. Combining e.g.
+/// `chi_sim+rus+eng` makes Tesseract mix scripts mid-line (Chinese pages come
+/// out half-Latin garbage). For a detected `rus`/`eng` page we keep the user's
+/// configured set, since Latin+Cyrillic coexist fine.
 async fn build_lang_arg(app: &AppHandle, enabled: Vec<String>, auto: bool, detected: Option<String>) -> String {
-    let mut langs: Vec<String> = Vec::new();
     if auto {
         if let Some(d) = detected {
             if ensure_lang(app, &d).await {
-                langs.push(d);
+                if d != "eng" && d != "rus" {
+                    // Exclusive: a non-Latin/Cyrillic script recognizes far
+                    // better on its own.
+                    logging::info("ocr", &format!("OCR lang: exclusive detected '{d}'"));
+                    return d;
+                }
+                // Latin/Cyrillic: fall through and combine with the enabled set.
+                let mut langs = vec![d];
+                for l in enabled {
+                    if !langs.contains(&l) {
+                        langs.push(l);
+                    }
+                }
+                langs.retain(|c| os_integration::ocr::is_lang_installed(c));
+                if langs.is_empty() {
+                    langs.push("eng".to_string());
+                }
+                let joined = langs.join("+");
+                logging::info("ocr", &format!("OCR lang: '{joined}' (detected '{}')", langs[0]));
+                return joined;
             }
         }
     }
+
+    let mut langs: Vec<String> = Vec::new();
     for l in enabled {
         if !langs.contains(&l) {
             langs.push(l);
@@ -688,7 +712,9 @@ async fn build_lang_arg(app: &AppHandle, enabled: Vec<String>, auto: bool, detec
     if langs.is_empty() {
         langs.push("eng".to_string());
     }
-    langs.join("+")
+    let joined = langs.join("+");
+    logging::info("ocr", &format!("OCR lang: '{joined}' (no detection)"));
+    joined
 }
 
 async fn ocr_lang_opts(state: &AppState) -> (Vec<String>, bool) {

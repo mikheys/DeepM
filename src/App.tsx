@@ -219,7 +219,9 @@ function MainApp() {
           </div>
         )}
 
-        {view === "translator" && (
+        {/* The translator stays mounted (just hidden) so its draft text and
+            translation survive a trip to another tab and back. */}
+        <div style={{ display: view === "translator" ? "contents" : "none" }}>
           <TranslatorPanel
             glossaryEntries={glossary}
             initialText={injectedText ?? historyEntry?.source_text}
@@ -231,7 +233,7 @@ function MainApp() {
               if (historyEntry) setHistoryEntry(null);
             }}
           />
-        )}
+        </div>
         {view === "history" && <HistoryPanel onSelect={handleHistorySelect} />}
         {view === "model_manager" && <ModelManager onModelReady={handleModelReady} />}
         {view === "onboarding" && <ModelManager onModelReady={handleModelReady} isOnboarding />}

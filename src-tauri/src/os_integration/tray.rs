@@ -90,6 +90,10 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
+        // `show()` alone does NOT restore a window that's minimized to the
+        // taskbar, so unminimize first — otherwise a tray double-click does
+        // nothing for a minimized window.
+        let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
     }
