@@ -62,6 +62,10 @@ struct HookState {
     /// True once the translate-replace combo has fired, until its keys are
     /// released. Prevents auto-repeat from firing it many times in a row.
     tr_fired: bool,
+    /// True if the mouse cursor was the I-beam (text) at any point during the
+    /// current left-drag. A text selection starts over text even if it's
+    /// released elsewhere, so this is more robust than checking only on release.
+    drag_saw_ibeam: bool,
 }
 
 impl HookState {
@@ -75,6 +79,7 @@ impl HookState {
             last_click_time: None,
             last_click_pos: (0.0, 0.0),
             tr_fired: false,
+            drag_saw_ibeam: false,
         }
     }
 
@@ -280,6 +285,8 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
 
                         EventType::ButtonPress(Button::Left) => {
                             st.mouse_down_pos = Some(st.last_pos);
+                            // A text selection starts over text → I-beam at press.
+                            st.drag_saw_ibeam = cursor_is_ibeam();
                         }
                         EventType::ButtonRelease(Button::Left) => {
                             let (cx, cy) = st.last_pos;
@@ -303,11 +310,12 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
                             let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
                             let has_selection = had_drag || is_multi_click;
 
-                            // Capture the cursor shape NOW (over the just-selected
-                            // text). An I-beam means "this is text" in any app —
-                            // it lets the backend allow a clipboard fallback for
+                            // I-beam seen at press / during the drag / now at
+                            // release → the gesture was over text in some app. This
+                            // lets the backend allow a clipboard fallback for
                             // read-only/Electron text while leaving canvases alone.
-                            let text_cursor = cursor_is_ibeam();
+                            let text_cursor = st.drag_saw_ibeam || cursor_is_ibeam();
+                            st.drag_saw_ibeam = false;
 
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
                                 "has_selection": has_selection,
@@ -318,6 +326,12 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
                         }
                         EventType::MouseMove { x, y } => {
                             st.last_pos = (x, y);
+                            // While dragging, note if the cursor passes over text.
+                            // Checked only until the first I-beam sighting, so it's
+                            // bounded for text drags.
+                            if st.mouse_down_pos.is_some() && !st.drag_saw_ibeam && cursor_is_ibeam() {
+                                st.drag_saw_ibeam = true;
+                            }
                             let _ = app.emit("cursor_move", serde_json::json!({ "x": x, "y": y }));
                         }
 
