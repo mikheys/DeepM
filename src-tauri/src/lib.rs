@@ -1134,6 +1134,7 @@ pub fn run() {
     let model_quant = settings.quantization.clone();
     let show_floating = settings.show_floating_button;
     let start_in_tray = settings.start_in_tray;
+    let want_autostart = settings.autostart;
     let global_hotkeys = settings.global_hotkeys;
     let shortcut_cfg = ShortcutConfig::from_settings(&settings);
 
@@ -1215,6 +1216,22 @@ pub fn run() {
             if show_floating {
                 if let Err(e) = os_integration::create_floating_window(&handle) {
                     log::warn!("Floating window creation failed: {e}");
+                }
+            }
+
+            // Reconcile the OS autostart registration with the saved setting, so
+            // the Run key actually matches `autostart` (covers users who toggled
+            // it before this was wired, and self-heals if it drifts).
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let al = handle.autolaunch();
+                let is_on = al.is_enabled().unwrap_or(false);
+                if want_autostart && !is_on {
+                    if let Err(e) = al.enable() {
+                        log::warn!("autostart enable failed: {e}");
+                    }
+                } else if !want_autostart && is_on {
+                    let _ = al.disable();
                 }
             }
 

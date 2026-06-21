@@ -84,6 +84,16 @@ export async function openLogFolder(): Promise<void> {
   return invoke("open_log_folder");
 }
 
+/** Registers/unregisters the app to start with Windows (writes the Run key). */
+export async function setAutostart(enabled: boolean): Promise<void> {
+  return invoke("set_autostart", { enabled });
+}
+
+/** Whether the app is currently registered to start with Windows. */
+export async function getAutostart(): Promise<boolean> {
+  return invoke("get_autostart");
+}
+
 export function onDownloadProgress(
   callback: (progress: number, speed_mbps: number) => void
 ) {

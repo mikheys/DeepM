@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import type { AppSettings, GlossaryEntry } from "../types";
 import type { Locale } from "../i18n";
 import { LANGUAGES, TARGET_LANGUAGES } from "../types";
-import { getSettings, saveSettings, gpuStatus } from "../api";
+import { getSettings, saveSettings, gpuStatus, setAutostart } from "../api";
 import { useI18n } from "../i18n-context";
 import HotkeyCapture from "./HotkeyCapture";
 import ExclusionsModal from "./ExclusionsModal";
@@ -76,6 +76,9 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
     if (!settings) return;
     const toSave = { ...settings, locale };
     await saveSettings(toSave);
+    // Apply the OS-level autostart registration to match the setting (this is
+    // what actually writes/removes the Windows Run key).
+    await setAutostart(settings.autostart).catch(() => {});
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
