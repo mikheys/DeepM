@@ -1,7 +1,21 @@
 use anyhow::Result;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
 const FLOATING_WINDOW_LABEL: &str = "floating";
+
+/// Tracks whether the floating button is currently shown. The input hook fires
+/// a "hide" on every keystroke (to dismiss the button when the user starts
+/// typing); without this guard that means a win32 ShowWindow call per key, even
+/// when the button is already hidden — needless work on the input path that can
+/// leave caret artifacts in classic Edit controls. We skip the call entirely
+/// when already hidden.
+static FLOATING_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Whether the floating button is currently shown (cheap, lock-free).
+pub fn floating_is_shown() -> bool {
+    FLOATING_SHOWN.load(Ordering::Relaxed)
+}
 
 // The window is sized tightly to its content so there is almost no transparent
 // "dead" area around the button. CSS keeps the button anchored at the top-left
@@ -215,6 +229,8 @@ pub fn show_floating(app: &AppHandle, x: f64, y: f64) -> Result<()> {
         None => return Ok(()),
     };
 
+    FLOATING_SHOWN.store(true, Ordering::Relaxed);
+
     // Always start collapsed (resets a possibly-expanded window from last time).
     let _ = win.set_size(PhysicalSize::new(COLLAPSED_W, COLLAPSED_H));
 
@@ -351,6 +367,13 @@ pub fn set_floating_expanded(app: &AppHandle, expanded: bool) -> Result<()> {
 /// visibility flag, which is NOT updated by our raw show — so win.hide()
 /// would no-op and the window would never disappear.
 pub fn hide_floating(app: &AppHandle) {
+    // Already hidden → do nothing. This is the hot path: the input hook calls
+    // hide on every keystroke, and skipping the window call here keeps the
+    // input path clean (no per-key win32 work that can disturb other apps'
+    // carets).
+    if !FLOATING_SHOWN.swap(false, Ordering::Relaxed) {
+        return;
+    }
     if let Some(win) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
         #[cfg(target_os = "windows")]
         {

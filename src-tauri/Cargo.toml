@@ -29,7 +29,6 @@ tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 
-rdev = "0.5"
 arboard = "3"
 enigo = "0.2"
 
