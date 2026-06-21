@@ -48,6 +48,12 @@ pub struct AppSettings {
     /// global hotkeys are suppressed.
     #[serde(default)]
     pub floating_exclusions: Vec<String>,
+    /// Tesseract languages always used for OCR (e.g. ["rus","eng"]).
+    #[serde(default = "default_ocr_languages")]
+    pub ocr_languages: Vec<String>,
+    /// Auto-detect the image script (OSD) and add/download the matching language.
+    #[serde(default = "default_true")]
+    pub ocr_auto_lang: bool,
     #[serde(default = "default_locale")]
     pub locale: String,
     #[serde(default = "default_schema_version")]
@@ -64,6 +70,14 @@ fn default_triple_copy_count() -> u32 {
 
 fn default_model_version() -> String {
     "HY-MT1.5".to_string()
+}
+
+fn default_ocr_languages() -> Vec<String> {
+    vec!["rus".to_string(), "eng".to_string()]
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_locale() -> String {
@@ -89,6 +103,8 @@ impl Default for AppSettings {
             triple_copy_interval_ms: 500,
             triple_copy_count: 3,
             floating_exclusions: Vec::new(),
+            ocr_languages: vec!["rus".to_string(), "eng".to_string()],
+            ocr_auto_lang: true,
             locale: "en".to_string(),
             schema_version: CURRENT_SCHEMA,
         }

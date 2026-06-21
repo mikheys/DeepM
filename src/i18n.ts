@@ -137,6 +137,14 @@ export type Strings = {
   ocr_engine_rapidocr: string;
   ocr_tesseract_missing: string;
   ocr_rapidocr_no_models: string;
+  settings_ocr_auto: string;
+  settings_ocr_auto_hint: string;
+  settings_ocr_langs: string;
+  settings_ocr_langs_hint: string;
+  ocr_lang_download: string;
+  ocr_lang_remove: string;
+  ocr_lang_bundled: string;
+  ocr_lang_install_first: string;
   settings_ocr_preprocess: string;
   settings_ocr_preprocess_hint: string;
   ocr_prep_auto: string;
@@ -320,6 +328,14 @@ const en: Strings = {
   ocr_engine_rapidocr: "RapidOCR (for Russian, CPU-only/slower)",
   ocr_tesseract_missing: "Bundled Tesseract not found.",
   ocr_rapidocr_no_models: "RapidOCR models not found. Reinstall, or drop a PP-OCR set into the models/rapidocr folder.",
+  settings_ocr_auto: "Auto-detect OCR language",
+  settings_ocr_auto_hint: "Detect the image's script and add/download the matching language",
+  settings_ocr_langs: "OCR languages",
+  settings_ocr_langs_hint: "Tick languages to recognize; download more as needed",
+  ocr_lang_download: "Download",
+  ocr_lang_remove: "Remove",
+  ocr_lang_bundled: "built-in",
+  ocr_lang_install_first: "Download this language first",
   settings_ocr_preprocess: "OCR preprocessing",
   settings_ocr_preprocess_hint: "Image prep before recognition (Auto = per-engine optimum)",
   ocr_prep_auto: "Auto (per engine)",
@@ -497,6 +513,14 @@ const ru: Strings = {
   ocr_engine_rapidocr: "RapidOCR (для русского, только CPU/медленнее)",
   ocr_tesseract_missing: "Встроенный Tesseract не найден.",
   ocr_rapidocr_no_models: "Модели RapidOCR не найдены. Переустановите или положите набор PP-OCR в папку models/rapidocr.",
+  settings_ocr_auto: "Авто-определение языка OCR",
+  settings_ocr_auto_hint: "Определять письменность картинки и подключать/докачивать нужный язык",
+  settings_ocr_langs: "Языки OCR",
+  settings_ocr_langs_hint: "Отметьте языки для распознавания; недостающие — докачайте",
+  ocr_lang_download: "Скачать",
+  ocr_lang_remove: "Удалить",
+  ocr_lang_bundled: "встроенный",
+  ocr_lang_install_first: "Сначала скачайте этот язык",
   settings_ocr_preprocess: "Препроцессинг OCR",
   settings_ocr_preprocess_hint: "Обработка картинки перед распознаванием (Авто = оптимум под движок)",
   ocr_prep_auto: "Авто (под движок)",

@@ -6,6 +6,7 @@ import { getSettings, saveSettings, gpuStatus } from "../api";
 import { useI18n } from "../i18n-context";
 import HotkeyCapture from "./HotkeyCapture";
 import ExclusionsModal from "./ExclusionsModal";
+import OcrLanguages from "./OcrLanguages";
 import "./SettingsPanel.css";
 
 type Props = {
@@ -233,6 +234,32 @@ export default function SettingsPanel({ onClose, locale, onLocaleChange }: Props
             </button>
             <span className="settings-hint">{t.settings_exclusions_hint}</span>
           </div>
+
+          <div className="settings-row">
+            <label>{t.settings_ocr_auto}</label>
+            <input
+              type="checkbox"
+              checked={settings.ocr_auto_lang}
+              onChange={(e) => update("ocr_auto_lang", e.target.checked)}
+            />
+            <span className="settings-hint">{t.settings_ocr_auto_hint}</span>
+          </div>
+          <div className="settings-row settings-row-block">
+            <label>{t.settings_ocr_langs}</label>
+            <OcrLanguages
+              enabled={settings.ocr_languages}
+              onToggle={(code, on) =>
+                update(
+                  "ocr_languages",
+                  on
+                    ? Array.from(new Set([...settings.ocr_languages, code]))
+                    : settings.ocr_languages.filter((c) => c !== code)
+                )
+              }
+            />
+            <span className="settings-hint">{t.settings_ocr_langs_hint}</span>
+          </div>
+
           <div className="settings-row">
             <label>{t.settings_autostart}</label>
             <input

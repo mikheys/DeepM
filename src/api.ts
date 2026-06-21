@@ -146,6 +146,15 @@ export async function ocrFromFile(path: string): Promise<string> {
 export async function ocrTestAll(path: string): Promise<import("./types").OcrTestResult[]> {
   return invoke("ocr_test_all", { path });
 }
+export async function ocrLangsStatus(): Promise<import("./types").OcrLang[]> {
+  return invoke("ocr_langs_status");
+}
+export async function ocrLangDownload(code: string): Promise<boolean> {
+  return invoke("ocr_lang_download", { code });
+}
+export async function ocrLangRemove(code: string): Promise<boolean> {
+  return invoke("ocr_lang_remove", { code });
+}
 export async function launchSnip(): Promise<void> {
   return invoke("launch_snip");
 }

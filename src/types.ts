@@ -110,7 +110,19 @@ export type AppSettings = {
   triple_copy_interval_ms: number;
   triple_copy_count: number;
   floating_exclusions: string[];
+  /** Tesseract languages always used for OCR (e.g. ["rus","eng"]). */
+  ocr_languages: string[];
+  /** Auto-detect the image script and add/download the matching language. */
+  ocr_auto_lang: boolean;
   locale: string;
+};
+
+export type OcrLang = {
+  code: string;
+  name: string;
+  installed: boolean;
+  enabled: boolean;
+  bundled: boolean;
 };
 
 export type AppView =

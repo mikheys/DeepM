@@ -56,6 +56,13 @@
   min-height: 32px;
 }
 
+.settings-row-block {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-row-block > label { width: auto; }
+
 .settings-row label {
   width: 200px;
   font-size: 13px;

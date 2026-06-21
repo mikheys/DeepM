@@ -613,10 +613,68 @@ async fn ocr_status() -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Downloads a Tesseract language pack into the writable tessdata dir (jsdelivr,
+/// the small "fast" data). Returns true on success.
+async fn ensure_lang(app: &AppHandle, code: &str) -> bool {
+    if os_integration::ocr::is_lang_installed(code) {
+        return true;
+    }
+    let _ = app.emit("ocr_lang_downloading", serde_json::json!({ "code": code }));
+    let url = format!("https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@main/{code}.traineddata");
+    let dest = os_integration::ocr::tessdata_user_dir().join(format!("{code}.traineddata"));
+    let ok = match reqwest::get(&url).await {
+        Ok(r) if r.status().is_success() => match r.bytes().await {
+            Ok(b) if !b.is_empty() => std::fs::write(&dest, &b).is_ok(),
+            _ => false,
+        },
+        _ => false,
+    };
+    let _ = app.emit("ocr_lang_downloaded", serde_json::json!({ "code": code, "ok": ok }));
+    ok
+}
+
+/// Builds the `+`-joined Tesseract `-l` argument: the auto-detected script's
+/// language (downloaded if needed, placed first for priority) plus the user's
+/// configured languages; only installed ones are kept.
+async fn build_lang_arg(app: &AppHandle, enabled: Vec<String>, auto: bool, detected: Option<String>) -> String {
+    let mut langs: Vec<String> = Vec::new();
+    if auto {
+        if let Some(d) = detected {
+            if ensure_lang(app, &d).await {
+                langs.push(d);
+            }
+        }
+    }
+    for l in enabled {
+        if !langs.contains(&l) {
+            langs.push(l);
+        }
+    }
+    langs.retain(|c| os_integration::ocr::is_lang_installed(c));
+    if langs.is_empty() {
+        langs.push("eng".to_string());
+    }
+    langs.join("+")
+}
+
+async fn ocr_lang_opts(state: &AppState) -> (Vec<String>, bool) {
+    let s = state.settings.lock().await;
+    (s.ocr_languages.clone(), s.ocr_auto_lang)
+}
+
 /// OCR the image currently on the clipboard (a screenshot) → normalized text.
 #[tauri::command]
-async fn ocr_from_clipboard() -> Result<String, String> {
-    let text = tokio::task::spawn_blocking(os_integration::ocr::recognize_clipboard)
+async fn ocr_from_clipboard(state: State<'_, AppState>, app: AppHandle) -> Result<String, String> {
+    let (enabled, auto) = ocr_lang_opts(&state).await;
+    let detected = if auto {
+        tokio::task::spawn_blocking(os_integration::ocr::detect_clipboard_script)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+    let lang_arg = build_lang_arg(&app, enabled, auto, detected).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_clipboard(&lang_arg))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
@@ -625,12 +683,55 @@ async fn ocr_from_clipboard() -> Result<String, String> {
 
 /// OCR an image file from disk → normalized text.
 #[tauri::command]
-async fn ocr_from_file(path: String) -> Result<String, String> {
-    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path))
+async fn ocr_from_file(path: String, state: State<'_, AppState>, app: AppHandle) -> Result<String, String> {
+    let (enabled, auto) = ocr_lang_opts(&state).await;
+    let detected = if auto {
+        let p = path.clone();
+        tokio::task::spawn_blocking(move || os_integration::ocr::detect_file_script(&p))
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+    let lang_arg = build_lang_arg(&app, enabled, auto, detected).await;
+    let text = tokio::task::spawn_blocking(move || os_integration::ocr::recognize_file(&path, &lang_arg))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     Ok(core::ocr_normalize::normalize_ocr_text(&text))
+}
+
+/// Status of every offered OCR language: code, display name, installed, enabled.
+#[tauri::command]
+async fn ocr_langs_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let enabled = state.settings.lock().await.ocr_languages.clone();
+    let rows: Vec<serde_json::Value> = os_integration::ocr::SUPPORTED_LANGS
+        .iter()
+        .map(|(code, name)| {
+            serde_json::json!({
+                "code": code,
+                "name": name,
+                "installed": os_integration::ocr::is_lang_installed(code),
+                "enabled": enabled.iter().any(|e| e == code),
+                "bundled": *code == "eng" || *code == "rus",
+            })
+        })
+        .collect();
+    Ok(serde_json::json!(rows))
+}
+
+/// Download a language pack (Settings UI).
+#[tauri::command]
+async fn ocr_lang_download(code: String, app: AppHandle) -> Result<bool, String> {
+    Ok(ensure_lang(&app, &code).await)
+}
+
+/// Remove a downloaded language pack (bundled eng/rus can't be removed).
+#[tauri::command]
+async fn ocr_lang_remove(code: String) -> Result<bool, String> {
+    Ok(tokio::task::spawn_blocking(move || os_integration::ocr::remove_lang(&code))
+        .await
+        .map_err(|e| e.to_string())?)
 }
 
 /// Hidden OCR diagnostic: sweep installed data sets x PSM on one image, with raw
@@ -1264,6 +1365,9 @@ pub fn run() {
             ocr_from_clipboard,
             ocr_from_file,
             ocr_test_all,
+            ocr_langs_status,
+            ocr_lang_download,
+            ocr_lang_remove,
             launch_snip,
             open_url,
             set_autostart,

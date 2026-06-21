@@ -1,12 +1,14 @@
-//! Screenshot / image OCR via a Tesseract CLI bundled inside the app (rus+eng).
+//! Screenshot / image OCR via a bundled Tesseract, with automatic script
+//! detection (OSD) and on-demand language packs.
 //!
-//! Fixed configuration (decided by benchmarking): tessdata "standard", PSM 6,
-//! OEM 1 (LSTM), with resize+grayscale preprocessing. No engine choice, no
-//! knobs — it's a translator, not an OCR workbench.
+//! - `osd.traineddata` (bundled) detects the dominant script of an image; we map
+//!   it to a Tesseract language and add it to `-l`, so a Chinese screenshot is
+//!   read with `chi_sim`, a Russian one with `rus`, etc.
+//! - Language data lives in one writable dir (`%LOCALAPPDATA%/DeepM/tessdata`),
+//!   seeded from the bundle (eng/rus/osd). Extra languages are downloaded there
+//!   on demand (by lib.rs), so the installer stays small.
 //!
-//! Pipeline: image → preprocess → Tesseract (raw text). Text normalization
-//! happens one level up (lib.rs). `ocr_test_all` is a hidden diagnostic that
-//! sweeps the installed data sets × PSM.
+//! Windows-only; non-Windows targets get stubs at the bottom.
 
 use anyhow::{anyhow, Result};
 #[cfg(target_os = "windows")]
@@ -19,31 +21,21 @@ use std::sync::OnceLock;
 #[cfg(target_os = "windows")]
 static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-/// Called once from setup() with Tauri's resolved resource dir, so the bundled
-/// Tesseract can be found next to the installed exe.
 #[cfg(target_os = "windows")]
 pub fn set_resource_dir(dir: PathBuf) {
     let _ = RESOURCE_DIR.set(dir);
 }
-
 #[cfg(target_os = "windows")]
 fn resource_dir() -> Option<PathBuf> {
     RESOURCE_DIR.get().cloned()
 }
-
-/// Directory the executable lives in. In a packaged build the bundled
-/// `tesseract/` folder sits next to the exe (same as `engine/`), which is the
-/// reliable production path — `resource_dir()` can point elsewhere.
 #[cfg(target_os = "windows")]
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()))
 }
 
 // ── Preprocessing ─────────────────────────────────────────────────────────────
 
-/// Upscales small images (Tesseract goes blind on small text) and grayscales.
 #[cfg(target_os = "windows")]
 fn preprocess(img: image::DynamicImage) -> image::DynamicImage {
     use image::GenericImageView;
@@ -60,23 +52,75 @@ fn preprocess(img: image::DynamicImage) -> image::DynamicImage {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// True if the bundled Tesseract is usable right now.
+/// Tesseract codes we offer + display names. eng/rus/osd are bundled; the rest
+/// download on demand.
+pub const SUPPORTED_LANGS: &[(&str, &str)] = &[
+    ("eng", "English"),
+    ("rus", "Русский"),
+    ("chi_sim", "中文 (简体)"),
+    ("chi_tra", "中文 (繁體)"),
+    ("jpn", "日本語"),
+    ("kor", "한국어"),
+    ("deu", "Deutsch"),
+    ("fra", "Français"),
+    ("spa", "Español"),
+    ("ita", "Italiano"),
+    ("por", "Português"),
+    ("ukr", "Українська"),
+    ("pol", "Polski"),
+    ("tur", "Türkçe"),
+    ("ara", "العربية"),
+    ("ell", "Ελληνικά"),
+];
+
 #[cfg(target_os = "windows")]
 pub fn engine_status() -> bool {
     tesseract::available()
 }
 
-/// OCR a screenshot already on the clipboard.
+/// Writable tessdata dir (download target / language list source).
 #[cfg(target_os = "windows")]
-pub fn recognize_clipboard() -> Result<String> {
-    tesseract::recognize(preprocess(clipboard_image()?), "standard", 6)
+pub fn tessdata_user_dir() -> PathBuf {
+    tesseract::data_dir()
 }
 
-/// OCR an image file from disk.
+/// Installed language codes (excluding "osd").
 #[cfg(target_os = "windows")]
-pub fn recognize_file(path: &str) -> Result<String> {
+pub fn installed_langs() -> Vec<String> {
+    tesseract::installed_langs()
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_lang_installed(code: &str) -> bool {
+    tesseract::is_installed(code)
+}
+
+/// Removes a downloaded language (bundled eng/rus/osd can't be removed).
+#[cfg(target_os = "windows")]
+pub fn remove_lang(code: &str) -> bool {
+    tesseract::remove_lang(code)
+}
+
+/// Detects the dominant script of the clipboard / file image → a language code
+/// (e.g. "chi_sim"), or None if undetermined.
+#[cfg(target_os = "windows")]
+pub fn detect_clipboard_script() -> Option<String> {
+    tesseract::detect_script(preprocess(clipboard_image().ok()?))
+}
+#[cfg(target_os = "windows")]
+pub fn detect_file_script(path: &str) -> Option<String> {
+    tesseract::detect_script(preprocess(image::open(path).ok()?))
+}
+
+/// OCR the clipboard / a file with the given `+`-joined Tesseract languages.
+#[cfg(target_os = "windows")]
+pub fn recognize_clipboard(lang_arg: &str) -> Result<String> {
+    tesseract::recognize(preprocess(clipboard_image()?), lang_arg, 6)
+}
+#[cfg(target_os = "windows")]
+pub fn recognize_file(path: &str, lang_arg: &str) -> Result<String> {
     let img = image::open(path).map_err(|e| anyhow!("open image: {e}"))?;
-    tesseract::recognize(preprocess(img), "standard", 6)
+    tesseract::recognize(preprocess(img), lang_arg, 6)
 }
 
 #[cfg(target_os = "windows")]
@@ -92,7 +136,6 @@ fn clipboard_image() -> Result<image::DynamicImage> {
 
 // ── Test Mode (hidden diagnostic) ─────────────────────────────────────────────
 
-/// One row of the Test Mode comparison.
 #[derive(serde::Serialize)]
 pub struct OcrTestResult {
     pub engine: String,
@@ -103,51 +146,33 @@ pub struct OcrTestResult {
     pub error: Option<String>,
 }
 
-/// Sweeps every installed data set × PSM {3,6,11} on one image (diagnostic).
 #[cfg(target_os = "windows")]
 pub fn ocr_test_all(path: &str) -> Vec<OcrTestResult> {
+    let langs = {
+        let mut l = installed_langs();
+        if l.is_empty() { l = vec!["eng".into()]; }
+        l.join("+")
+    };
     let mut out = Vec::new();
-    for variant in ["standard", "fast", "best"] {
-        if !tesseract::has_data(variant) {
-            continue;
-        }
-        for psm in [3u32, 6, 11] {
-            let model = format!("Tesseract {variant} psm{psm}");
-            let img = match image::open(path) {
-                Ok(i) => i,
-                Err(e) => {
-                    out.push(OcrTestResult {
-                        engine: "tesseract".into(),
-                        model,
-                        preprocess: "resize+grayscale".into(),
-                        ms: 0,
-                        text: String::new(),
-                        error: Some(format!("open image: {e}")),
-                    });
-                    continue;
-                }
-            };
-            let started = std::time::Instant::now();
-            let result = tesseract::recognize(preprocess(img), variant, psm);
-            let ms = started.elapsed().as_millis();
-            let (text, error) = match result {
-                Ok(t) => (t, None),
-                Err(e) => (String::new(), Some(e.to_string())),
-            };
-            out.push(OcrTestResult {
-                engine: "tesseract".into(),
-                model,
-                preprocess: "resize+grayscale".into(),
-                ms,
-                text,
-                error,
-            });
-        }
+    for psm in [3u32, 6, 11] {
+        let model = format!("Tesseract {langs} psm{psm}");
+        let img = match image::open(path) {
+            Ok(i) => i,
+            Err(e) => {
+                out.push(OcrTestResult { engine: "tesseract".into(), model, preprocess: "resize+grayscale".into(), ms: 0, text: String::new(), error: Some(format!("open image: {e}")) });
+                continue;
+            }
+        };
+        let started = std::time::Instant::now();
+        let result = tesseract::recognize(preprocess(img), &langs, psm);
+        let ms = started.elapsed().as_millis();
+        let (text, error) = match result { Ok(t) => (t, None), Err(e) => (String::new(), Some(e.to_string())) };
+        out.push(OcrTestResult { engine: "tesseract".into(), model, preprocess: "resize+grayscale".into(), ms, text, error });
     }
     out
 }
 
-// ── Tesseract CLI backend (bundled inside the app) ────────────────────────────
+// ── Tesseract CLI backend ─────────────────────────────────────────────────────
 #[cfg(target_os = "windows")]
 mod tesseract {
     use super::{exe_dir, resource_dir};
@@ -156,33 +181,15 @@ mod tesseract {
     use std::process::Command;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    /// Bundled (never removable) data, seeded into the writable dir.
+    const BUNDLED: &[&str] = &["eng", "rus", "osd"];
 
-    /// Appends a line to %LOCALAPPDATA%/DeepM/ocr-debug.log (visible in release,
-    /// unlike eprintln). Helps diagnose path/DLL issues in installed builds.
-    fn dbg_log(msg: &str) {
-        if let Some(d) = dirs::data_local_dir() {
-            let dir = d.join("DeepM");
-            let _ = std::fs::create_dir_all(&dir);
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(dir.join("ocr-debug.log"))
-            {
-                let _ = writeln!(f, "{msg}");
-            }
-        }
-    }
-
-    /// Locate tesseract.exe: bundled copy first (next to the installed exe under
-    /// `tesseract/`), then a dev path, then PATH / Program Files as a fallback.
     fn exe() -> Option<PathBuf> {
         let mut candidates: Vec<PathBuf> = Vec::new();
         #[cfg(debug_assertions)]
         if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
             candidates.push(PathBuf::from(d).join("tesseract").join("tesseract.exe"));
         }
-        // Production: bundled next to the exe (like engine/).
         if let Some(d) = exe_dir() {
             candidates.push(d.join("tesseract").join("tesseract.exe"));
         }
@@ -209,110 +216,142 @@ mod tesseract {
         None
     }
 
-    /// True if the given data set ("standard"|"fast"|"best") is installed.
-    pub fn has_data(variant: &str) -> bool {
-        tessdata_dir(variant).is_some()
-    }
-
-    /// Bundled tessdata dir for the chosen variant, if present (non-empty files).
-    fn tessdata_dir(variant: &str) -> Option<PathBuf> {
-        let sub = match variant {
-            "fast" => "tessdata-fast",
-            "best" => "tessdata-best",
-            _ => "tessdata-standard",
-        };
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        #[cfg(debug_assertions)]
-        if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
-            candidates.push(PathBuf::from(d).join("tesseract").join(sub));
-        }
-        if let Some(d) = exe_dir() {
-            candidates.push(d.join("tesseract").join(sub));
-        }
-        if let Some(r) = resource_dir() {
-            candidates.push(r.join("tesseract").join(sub));
-        }
-        candidates.into_iter().find(|d| {
-            d.join("eng.traineddata").metadata().map(|m| m.len() > 0).unwrap_or(false)
-        })
-    }
-
     pub fn available() -> bool {
         exe().is_some()
     }
 
-    /// Languages to pass: prefer rus+eng, falling back to whatever is installed.
-    fn langs(exe: &PathBuf, tessdata: Option<&PathBuf>) -> String {
-        let mut cmd = Command::new(exe);
-        cmd.arg("--list-langs");
-        if let Some(d) = tessdata {
-            cmd.args(["--tessdata-dir", &d.to_string_lossy()]);
+    /// The bundled tessdata-standard dir (source for seeding eng/rus/osd).
+    fn bundled_tessdata() -> Option<PathBuf> {
+        let mut cands: Vec<PathBuf> = Vec::new();
+        #[cfg(debug_assertions)]
+        if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
+            cands.push(PathBuf::from(d).join("tesseract").join("tessdata-standard"));
         }
-        let out = cmd.no_window().output();
-        let installed: Vec<String> = out
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(|s| s.trim().to_string()).collect())
-            .unwrap_or_default();
-        let has = |l: &str| installed.iter().any(|x| x == l);
-        match (has("rus"), has("eng")) {
-            (true, true) => "rus+eng".into(),
-            (true, false) => "rus".into(),
-            (false, true) => "eng".into(),
-            _ => "rus+eng".into(),
+        if let Some(d) = exe_dir() {
+            cands.push(d.join("tesseract").join("tessdata-standard"));
         }
+        if let Some(r) = resource_dir() {
+            cands.push(r.join("tesseract").join("tessdata-standard"));
+        }
+        cands.into_iter().find(|d| d.join("eng.traineddata").exists())
     }
 
-    /// Context line written to the debug log only when recognition fails.
-    fn fail_context(variant: &str, psm: u32) -> String {
-        format!(
-            "--- OCR FAIL (variant={variant}, psm={psm}) exe_dir={:?} resource_dir={:?} ---",
-            exe_dir().map(|d| d.display().to_string()),
-            resource_dir().map(|d| d.display().to_string()),
-        )
-    }
-
-    pub fn recognize(img: image::DynamicImage, variant: &str, psm: u32) -> Result<String> {
-        let exe = match exe() {
-            Some(e) => e,
-            None => {
-                dbg_log(&fail_context(variant, psm));
-                dbg_log("tesseract.exe NOT FOUND in any candidate");
-                return Err(anyhow!("tesseract_not_installed"));
+    /// One writable tessdata dir holding bundled + downloaded languages, so a
+    /// single --tessdata-dir covers everything. Seeded from the bundle.
+    pub fn data_dir() -> PathBuf {
+        let dir = dirs::data_local_dir()
+            .unwrap_or_default()
+            .join("DeepM")
+            .join("tessdata");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Some(bundle) = bundled_tessdata() {
+            for code in BUNDLED {
+                let dst = dir.join(format!("{code}.traineddata"));
+                let src = bundle.join(format!("{code}.traineddata"));
+                if !dst.exists() && src.exists() {
+                    let _ = std::fs::copy(&src, &dst);
+                }
             }
-        };
-        let tessdata = tessdata_dir(variant);
+        }
+        dir
+    }
+
+    pub fn installed_langs() -> Vec<String> {
+        let mut out = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(data_dir()) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if let Some(code) = name.strip_suffix(".traineddata") {
+                    if code != "osd" {
+                        out.push(code.to_string());
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    pub fn is_installed(code: &str) -> bool {
+        data_dir()
+            .join(format!("{code}.traineddata"))
+            .metadata()
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+    }
+
+    pub fn remove_lang(code: &str) -> bool {
+        if BUNDLED.contains(&code) {
+            return false;
+        }
+        std::fs::remove_file(data_dir().join(format!("{code}.traineddata"))).is_ok()
+    }
+
+    /// Map a Tesseract OSD script name to a language code we can OCR with.
+    fn script_to_lang(script: &str) -> Option<&'static str> {
+        Some(match script {
+            "Han" => "chi_sim",
+            "Japanese" => "jpn",
+            "Korean" | "Hangul" => "kor",
+            "Cyrillic" => "rus",
+            "Latin" => "eng",
+            "Arabic" => "ara",
+            "Greek" => "ell",
+            _ => return None,
+        })
+    }
+
+    /// Run OSD (--psm 0) to detect the dominant script → language code.
+    pub fn detect_script(img: image::DynamicImage) -> Option<String> {
+        let exe = exe()?;
+        let dir = data_dir();
+        let tmp = std::env::temp_dir().join(format!("deepm_osd_{}.png", std::process::id()));
+        img.save(&tmp).ok()?;
+        let out = Command::new(&exe)
+            .arg(&tmp)
+            .arg("stdout")
+            .args(["--psm", "0"])
+            .args(["--tessdata-dir", &dir.to_string_lossy()])
+            .no_window()
+            .output();
+        let _ = std::fs::remove_file(&tmp);
+        let out = out.ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let script = text
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("Script: ").map(|s| s.trim().to_string()))?;
+        script_to_lang(&script).map(String::from)
+    }
+
+    pub fn recognize(img: image::DynamicImage, lang_arg: &str, psm: u32) -> Result<String> {
+        let exe = exe().ok_or_else(|| anyhow!("tesseract_not_installed"))?;
+        let dir = data_dir();
+        let lang = if lang_arg.trim().is_empty() { "eng" } else { lang_arg };
 
         let tmp = std::env::temp_dir().join(format!("deepm_ocr_{}.png", std::process::id()));
         img.save(&tmp).map_err(|e| anyhow!("save temp: {e}"))?;
 
-        let langs = langs(&exe, tessdata.as_ref());
         let psm = if (3..=13).contains(&psm) { psm } else { 6 };
         let psm_s = psm.to_string();
         let mut cmd = Command::new(&exe);
-        // --oem 1 = LSTM engine only. Dictionaries off so mixed RU/EN technical
-        // tokens (rec-модели) read literally; keep inter-word spaces.
-        cmd.arg(&tmp).arg("stdout").args(["-l", &langs, "--oem", "1", "--psm", &psm_s]);
+        cmd.arg(&tmp).arg("stdout").args(["-l", lang, "--oem", "1", "--psm", &psm_s]);
         cmd.args(["-c", "preserve_interword_spaces=1"]);
         cmd.args(["-c", "load_system_dawg=0"]);
         cmd.args(["-c", "load_freq_dawg=0"]);
-        if let Some(d) = &tessdata {
-            cmd.args(["--tessdata-dir", &d.to_string_lossy()]);
-        }
+        cmd.args(["--tessdata-dir", &dir.to_string_lossy()]);
         let output = cmd.no_window().output();
         let _ = std::fs::remove_file(&tmp);
 
         let output = output.map_err(|e| {
-            dbg_log(&fail_context(variant, psm));
-            dbg_log(&format!("SPAWN FAILED (exe={}): {e}", exe.display()));
+            super::dbg_log(&format!("OCR FAIL: spawn (exe={}): {e}", exe.display()));
             anyhow!("tesseract run: {e}")
         })?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            dbg_log(&fail_context(variant, psm));
-            dbg_log(&format!(
-                "EXIT FAIL code={:?} tessdata={:?} stderr={}",
+            super::dbg_log(&format!(
+                "OCR FAIL: exit {:?} lang={lang} tessdata={} stderr={}",
                 output.status.code(),
-                tessdata.as_ref().map(|d| d.display().to_string()),
+                dir.display(),
                 stderr.trim()
             ));
             return Err(anyhow!("tesseract error: {}", stderr.trim()));
@@ -320,7 +359,6 @@ mod tesseract {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
-    /// Small extension so the CLI calls don't flash a console window.
     trait NoWindow {
         fn no_window(&mut self) -> &mut Self;
     }
@@ -332,13 +370,38 @@ mod tesseract {
     }
 }
 
+/// Appends a line to %LOCALAPPDATA%/DeepM/ocr-debug.log (visible in release).
+#[cfg(target_os = "windows")]
+fn dbg_log(msg: &str) {
+    if let Some(d) = dirs::data_local_dir() {
+        let dir = d.join("DeepM");
+        let _ = std::fs::create_dir_all(&dir);
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("ocr-debug.log")) {
+            let _ = writeln!(f, "{msg}");
+        }
+    }
+}
+
 // ── Non-Windows stubs ─────────────────────────────────────────────────────────
 #[cfg(not(target_os = "windows"))]
 pub fn engine_status() -> bool { false }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_clipboard() -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
+pub fn tessdata_user_dir() -> std::path::PathBuf { std::path::PathBuf::new() }
 #[cfg(not(target_os = "windows"))]
-pub fn recognize_file(_path: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
+pub fn installed_langs() -> Vec<String> { Vec::new() }
+#[cfg(not(target_os = "windows"))]
+pub fn is_lang_installed(_code: &str) -> bool { false }
+#[cfg(not(target_os = "windows"))]
+pub fn remove_lang(_code: &str) -> bool { false }
+#[cfg(not(target_os = "windows"))]
+pub fn detect_clipboard_script() -> Option<String> { None }
+#[cfg(not(target_os = "windows"))]
+pub fn detect_file_script(_path: &str) -> Option<String> { None }
+#[cfg(not(target_os = "windows"))]
+pub fn recognize_clipboard(_lang_arg: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
+#[cfg(not(target_os = "windows"))]
+pub fn recognize_file(_path: &str, _lang_arg: &str) -> Result<String> { Err(anyhow!("OCR is Windows-only")) }
 #[cfg(not(target_os = "windows"))]
 #[derive(serde::Serialize)]
 pub struct OcrTestResult {

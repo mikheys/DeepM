@@ -71,6 +71,24 @@ foreach ($lang in @("eng","rus")) {
   Copy-Item $src $tessStd -Force
 }
 
+# osd.traineddata — Tesseract's Orientation & Script Detection data, used to
+# auto-detect the image's script (Latin/Cyrillic/Han/...) and pick the language.
+$osd = Join-Path $tessStd "osd.traineddata"
+if (-not (Test-Path $osd)) {
+  $osdSrc = Join-Path $TesseractDir "tessdata\osd.traineddata"
+  if (Test-Path $osdSrc) {
+    Copy-Item $osdSrc $osd -Force
+  } else {
+    Write-Host "osd.traineddata (script detection)" -ForegroundColor Cyan
+    $ok = DlMirror @(
+      "https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata@main/osd.traineddata",
+      "https://fastly.jsdelivr.net/gh/tesseract-ocr/tessdata@main/osd.traineddata",
+      "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/osd.traineddata"
+    ) $osd
+    if (-not $ok) { Write-Host "  ! osd unreachable — auto script detection will be disabled" -ForegroundColor Yellow }
+  }
+}
+
 Write-Host "`nStaged:" -ForegroundColor Green
 $bytes = (Get-ChildItem -Recurse $tess | Where-Object { -not $_.PSIsContainer } | Measure-Object Length -Sum).Sum
 Get-ChildItem -Recurse $tess | Where-Object { -not $_.PSIsContainer } |
