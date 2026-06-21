@@ -173,6 +173,41 @@ fn key_from_name(name: &str) -> Option<Key> {
     })
 }
 
+/// True if the mouse cursor is currently the system I-beam (text) cursor — the
+/// universal sign that the pointer is over selectable text. Works in any app
+/// (browser, Electron, native), unlike a Win32 caret which only exists in
+/// editable fields. Used to allow the clipboard fallback ONLY over real text,
+/// so canvas apps (Photoshop brush = crosshair) are never disturbed.
+#[cfg(target_os = "windows")]
+fn cursor_is_ibeam() -> bool {
+    use std::ffi::c_void;
+    #[repr(C)]
+    struct Point { x: i32, y: i32 }
+    #[repr(C)]
+    struct CursorInfo {
+        cb_size: u32,
+        flags: u32,
+        h_cursor: *mut c_void,
+        pt_screen_pos: Point,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetCursorInfo(pci: *mut CursorInfo) -> i32;
+        fn LoadCursorW(hinstance: *mut c_void, lpcursorname: *const u16) -> *mut c_void;
+    }
+    const IDC_IBEAM: *const u16 = 32513usize as *const u16;
+    unsafe {
+        let mut ci: CursorInfo = std::mem::zeroed();
+        ci.cb_size = std::mem::size_of::<CursorInfo>() as u32;
+        if GetCursorInfo(&mut ci) == 0 || ci.h_cursor.is_null() {
+            return false;
+        }
+        ci.h_cursor == LoadCursorW(std::ptr::null_mut(), IDC_IBEAM)
+    }
+}
+#[cfg(not(target_os = "windows"))]
+fn cursor_is_ibeam() -> bool { false }
+
 pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
     std::thread::Builder::new()
         .name("deepm-hook".into())
@@ -268,10 +303,17 @@ pub fn spawn_hook(app: AppHandle, config: Arc<SharedHookConfig>) {
                             let is_multi_click = !had_drag && st.detect_multi_click(cx, cy);
                             let has_selection = had_drag || is_multi_click;
 
+                            // Capture the cursor shape NOW (over the just-selected
+                            // text). An I-beam means "this is text" in any app —
+                            // it lets the backend allow a clipboard fallback for
+                            // read-only/Electron text while leaving canvases alone.
+                            let text_cursor = cursor_is_ibeam();
+
                             let _ = app.emit("mouse_selection_released", serde_json::json!({
                                 "has_selection": has_selection,
                                 "x": cx,
                                 "y": cy,
+                                "text_cursor": text_cursor,
                             }));
                         }
                         EventType::MouseMove { x, y } => {

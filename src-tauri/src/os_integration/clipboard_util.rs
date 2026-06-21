@@ -101,14 +101,19 @@ pub fn copy_selection_to_clipboard() -> Result<String> {
 ///    to a clipboard copy (save/restore). The caret guard is what keeps canvas
 ///    apps safe: Photoshop's canvas has no caret, so the Ctrl+C never fires
 ///    there, while real edit fields (Explorer rename, etc.) do have one.
-pub fn get_selected_text() -> Option<String> {
+/// `text_cursor` = the pointer was an I-beam when the selection gesture ended
+/// (captured by the hook). Together with a Win32 caret it tells us the context
+/// is text, so the clipboard fallback is safe; on a canvas (brush cursor, no
+/// caret) it stays false and no keystroke is sent.
+pub fn get_selected_text(text_cursor: bool) -> Option<String> {
     if let Some(text) = super::uia::selection_via_uia() {
         return Some(text);
     }
     #[cfg(target_os = "windows")]
-    if foreground_has_caret() {
+    if text_cursor || foreground_has_caret() {
         return copy_selection_nondestructive();
     }
+    let _ = text_cursor;
     None
 }
 

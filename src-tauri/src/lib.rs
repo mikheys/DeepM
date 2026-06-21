@@ -475,7 +475,8 @@ async fn quick_translate(
 /// translating, so the selection-wiping copy never happens on mere selection.
 #[tauri::command]
 async fn translate_selection(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let text = tokio::task::spawn_blocking(os_integration::get_selected_text)
+    // Explicit user action (button click) — allow the clipboard fallback.
+    let text = tokio::task::spawn_blocking(|| os_integration::get_selected_text(true))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1090,6 +1091,9 @@ pub fn run() {
                     let has_selection = payload.as_ref()
                         .and_then(|v| v["has_selection"].as_bool())
                         .unwrap_or(false);
+                    let text_cursor = payload.as_ref()
+                        .and_then(|v| v["text_cursor"].as_bool())
+                        .unwrap_or(false);
                     let click_x = payload.as_ref()
                         .and_then(|v| v["x"].as_f64())
                         .unwrap_or(0.0);
@@ -1176,7 +1180,7 @@ pub fn run() {
                         // button must NOT appear. Apps where Ctrl+C is disruptive
                         // (terminals) can be added to the exclusion list.
                         let captured = tokio::task::spawn_blocking(
-                            os_integration::get_selected_text
+                            move || os_integration::get_selected_text(text_cursor)
                         ).await;
                         let text = match captured {
                             Ok(Some(t)) if !t.trim().is_empty() => t,
