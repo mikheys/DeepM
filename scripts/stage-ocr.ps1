@@ -4,6 +4,7 @@
     src-tauri/tesseract/   -> tesseract.exe
                               + the DLLs needed for recognition (trimmed)
                               + tessdata-standard/{eng,rus}.traineddata
+                              + tessdata-standard/osd.traineddata
 
   This folder is .gitignored (like src-tauri/engine), so run this once on the
   build machine BEFORE `npm run tauri build`.
@@ -29,8 +30,23 @@ $srcTauri = Join-Path $root "src-tauri"
 $tess     = Join-Path $srcTauri "tesseract"
 $tessStd  = Join-Path $tess "tessdata-standard"
 
+# Downloads a file, trying each mirror URL in order until one succeeds.
+# Returns $true on success, $false if every mirror failed.
+function DlMirror {
+  param([string[]]$Urls, [string]$Dest)
+  foreach ($u in $Urls) {
+    try {
+      Invoke-WebRequest -Uri $u -OutFile $Dest -UseBasicParsing -TimeoutSec 60
+      if (Test-Path $Dest) { return $true }
+    } catch {
+      Write-Host "    mirror failed: $u" -ForegroundColor DarkGray
+    }
+  }
+  return $false
+}
+
 # Drop ONLY the rendering / text-shaping stack that UB-Mannheim ships for the
-# training tools (text2image) — it is never used by `tesseract image stdout`.
+# training tools (text2image) - it is never used by `tesseract image stdout`.
 # Everything else is kept (incl. libcurl, which tesseract.exe links at load
 # time, so dropping it stops the exe from starting). Matched by prefix.
 $drop = @(
@@ -71,7 +87,7 @@ foreach ($lang in @("eng","rus")) {
   Copy-Item $src $tessStd -Force
 }
 
-# osd.traineddata — Tesseract's Orientation & Script Detection data, used to
+# osd.traineddata - Tesseract's Orientation & Script Detection data, used to
 # auto-detect the image's script (Latin/Cyrillic/Han/...) and pick the language.
 $osd = Join-Path $tessStd "osd.traineddata"
 if (-not (Test-Path $osd)) {
@@ -85,7 +101,7 @@ if (-not (Test-Path $osd)) {
       "https://fastly.jsdelivr.net/gh/tesseract-ocr/tessdata@main/osd.traineddata",
       "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/osd.traineddata"
     ) $osd
-    if (-not $ok) { Write-Host "  ! osd unreachable — auto script detection will be disabled" -ForegroundColor Yellow }
+    if (-not $ok) { Write-Host "  ! osd unreachable - auto script detection will be disabled" -ForegroundColor Yellow }
   }
 }
 
