@@ -566,15 +566,17 @@ mod tesseract {
             }
         };
 
-        // A line is "foreign" (re-OCR with secondary) when fewer than half its
-        // letters are Han ideographs.
-        const HAN_KEEP: f32 = 0.5;
+        // Re-OCR a line with the secondary languages only when it's almost
+        // entirely non-Han (e.g. a Russian/English title). Lines that mix
+        // Chinese with inline English keep enough Han to stay above this floor,
+        // so they stay on the primary `chi_sim(+eng)` pass, which reads both.
+        const MIN_HAN_TO_KEEP: f32 = 0.15;
         let (iw, ih) = (img.width(), img.height());
         let mut out = String::new();
         let mut rechecked = 0;
 
         for ln in &lines {
-            if han_ratio(&ln.text) >= HAN_KEEP {
+            if han_ratio(&ln.text) >= MIN_HAN_TO_KEEP {
                 out.push_str(ln.text.trim());
                 out.push('\n');
                 continue;

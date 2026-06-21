@@ -687,8 +687,14 @@ async fn resolve_ocr_langs(
         if let Some(d) = detected {
             if ensure_lang(app, &d).await {
                 if d != "eng" && d != "rus" {
-                    // Non-Latin/Cyrillic dominant script. Secondary = the user's
-                    // other enabled (installed) languages, for a confidence merge.
+                    // Embedded Latin (English words, numbers, URLs) is very
+                    // common inside CJK text, and Tesseract handles CJK+Latin
+                    // well, so fold `eng` into the PRIMARY pass when enabled.
+                    // Cyrillic — which caused the script mixing — is deliberately
+                    // NOT added to the primary; it's only used to re-OCR the
+                    // predominantly-foreign lines (e.g. a Russian title).
+                    let has_eng = enabled.iter().any(|l| l == "eng") && installed("eng");
+                    let primary = if has_eng { format!("{d}+eng") } else { d.clone() };
                     let secondary: Vec<String> = enabled
                         .into_iter()
                         .filter(|l| l != &d && installed(l))
@@ -698,8 +704,8 @@ async fn resolve_ocr_langs(
                     } else {
                         Some(secondary.join("+"))
                     };
-                    logging::info("ocr", &format!("OCR plan: primary '{d}', secondary {secondary:?}"));
-                    return (d, secondary);
+                    logging::info("ocr", &format!("OCR plan: primary '{primary}', secondary {secondary:?}"));
+                    return (primary, secondary);
                 }
                 // Latin/Cyrillic detected: combine with the enabled set (these
                 // coexist fine in one pass).
