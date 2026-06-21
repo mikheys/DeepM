@@ -670,6 +670,25 @@ async fn launch_snip() -> Result<(), String> {
     Ok(())
 }
 
+/// Opens a URL in the user's default browser (used by the About page links).
+#[tauri::command]
+async fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+    }
+    Ok(())
+}
+
 /// Lists executable names of apps with a visible window, for the exclusion picker.
 #[tauri::command]
 async fn list_app_processes() -> Result<Vec<String>, String> {
@@ -1246,6 +1265,7 @@ pub fn run() {
             ocr_from_file,
             ocr_test_all,
             launch_snip,
+            open_url,
             set_autostart,
             get_autostart,
             restart_engine,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Languages, History, Package, Settings,
+  Languages, History, Package, Settings, Info,
   ChevronRight, ChevronLeft,
 } from "lucide-react";
 import type { AppView, TranslationHistoryEntry } from "./types";
@@ -11,6 +11,7 @@ import ModelManager from "./components/ModelManager";
 import HistoryPanel from "./components/HistoryPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import OcrTestPanel from "./components/OcrTestPanel";
+import AboutPanel from "./components/AboutPanel";
 import FloatingButton from "./components/FloatingButton";
 import { getModelStatus, getSettings } from "./api";
 import { listen } from "@tauri-apps/api/event";
@@ -176,13 +177,17 @@ function MainApp() {
             icon={<Settings size={18} />} label={t.nav_settings} expanded={sidebarExpanded} />
         </div>
 
-        {/* Status */}
+        {/* About + status */}
         <div className="sidebar-bottom">
-          <div className={`model-status-dot ${modelReady ? "ready" : "not-ready"}`}
-            title={modelReady ? t.model_ready : t.no_model} />
-          {sidebarExpanded && (
-            <span className="model-status-label">{modelReady ? t.model_ready : t.no_model}</span>
-          )}
+          <NavBtn active={view === "about"} onClick={() => setView("about")}
+            icon={<Info size={18} />} label={t.nav_about} expanded={sidebarExpanded} />
+          <div className="sidebar-status">
+            <div className={`model-status-dot ${modelReady ? "ready" : "not-ready"}`}
+              title={modelReady ? t.model_ready : t.no_model} />
+            {sidebarExpanded && (
+              <span className="model-status-label">{modelReady ? t.model_ready : t.no_model}</span>
+            )}
+          </div>
         </div>
       </nav>
 
@@ -217,6 +222,7 @@ function MainApp() {
         )}
         {/* OCR Test Mode kept for diagnostics; no UI entry point (re-add a button to open). */}
         {view === "ocr_test" && <OcrTestPanel onBack={() => setView("settings")} />}
+        {view === "about" && <AboutPanel />}
       </main>
     </div>
   );

@@ -114,7 +114,7 @@ export type AppSettings = {
 };
 
 export type AppView =
-  | "translator" | "settings" | "history" | "model_manager" | "onboarding" | "ocr_test";
+  | "translator" | "settings" | "history" | "model_manager" | "onboarding" | "ocr_test" | "about";
 
 export type OcrTestResult = {
   engine: string;

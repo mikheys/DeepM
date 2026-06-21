@@ -6,6 +6,19 @@ export type Strings = {
   nav_history: string;
   nav_model: string;
   nav_settings: string;
+  nav_about: string;
+
+  // About page
+  about_tagline: string;
+  about_check_updates: string;
+  about_latest: string;
+  about_available: string;
+  about_check_error: string;
+  about_github: string;
+  about_releases: string;
+  about_issues: string;
+  about_made_with: string;
+  about_license: string;
 
   // Status bar
   model_ready: string;
@@ -182,6 +195,17 @@ const en: Strings = {
   nav_history: "History",
   nav_model: "Model",
   nav_settings: "Settings",
+  nav_about: "About",
+  about_tagline: "A private, fully-local translator for Windows. Everything runs on your device.",
+  about_check_updates: "Check for updates",
+  about_latest: "You're on the latest version",
+  about_available: "Update available —",
+  about_check_error: "Couldn't check (no connection?)",
+  about_github: "GitHub",
+  about_releases: "Releases",
+  about_issues: "Report an issue",
+  about_made_with: "Powered by Tencent HY-MT via llama.cpp · Tauri · React · Rust",
+  about_license: "Free & open source",
 
   model_ready: "Model ready",
   no_model: "No model",
@@ -348,6 +372,17 @@ const ru: Strings = {
   nav_history: "История",
   nav_model: "Модель",
   nav_settings: "Настройки",
+  nav_about: "О программе",
+  about_tagline: "Приватный локальный переводчик для Windows. Всё работает на вашем устройстве.",
+  about_check_updates: "Проверить обновления",
+  about_latest: "У вас последняя версия",
+  about_available: "Доступно обновление —",
+  about_check_error: "Не удалось проверить (нет соединения?)",
+  about_github: "GitHub",
+  about_releases: "Релизы",
+  about_issues: "Сообщить о проблеме",
+  about_made_with: "На базе Tencent HY-MT через llama.cpp · Tauri · React · Rust",
+  about_license: "Бесплатно, открытый код",
 
   model_ready: "Модель готова",
   no_model: "Нет модели",
